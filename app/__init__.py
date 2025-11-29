@@ -1,0 +1,3 @@
+"""
+Helvetra backend application package.
+"""
