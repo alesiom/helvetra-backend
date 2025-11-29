@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.core.middleware import RateLimitMiddleware
 from app.api.routes import health, languages, translate, feedback
 
 settings = get_settings()
@@ -19,6 +20,7 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
 )
 
+# Middleware is processed in reverse order (last added = first executed)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -26,6 +28,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health.router, tags=["Health"])
 app.include_router(languages.router, prefix="/api/v1", tags=["Languages"])
