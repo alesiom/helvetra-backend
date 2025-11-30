@@ -17,8 +17,11 @@ class Feedback(Base):
     __tablename__ = "feedback"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    translation_id: Mapped[str] = mapped_column(String(100), index=True)
     vote: Mapped[str] = mapped_column(String(10))  # "like" or "dislike"
+    source_text: Mapped[str] = mapped_column(Text)
+    source_lang: Mapped[str] = mapped_column(String(5))
+    translated_text: Mapped[str] = mapped_column(Text)
+    target_lang: Mapped[str] = mapped_column(String(5))
     region: Mapped[str | None] = mapped_column(String(20), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

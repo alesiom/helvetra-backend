@@ -29,8 +29,11 @@ async def submit_feedback(
         )
 
     feedback = Feedback(
-        translation_id=request.translation_id,
         vote=request.vote,
+        source_text=request.source_text,
+        source_lang=request.source_lang,
+        translated_text=request.translated_text,
+        target_lang=request.target_lang,
         region=request.region,
         comment=request.comment,
     )

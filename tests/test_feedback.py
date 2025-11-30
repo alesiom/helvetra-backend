@@ -28,35 +28,35 @@ def client(mock_db):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def valid_feedback():
+    """Valid feedback request payload."""
+    return {
+        "vote": "like",
+        "consent": True,
+        "source_text": "Hallo Welt",
+        "source_lang": "de",
+        "translated_text": "Hello World",
+        "target_lang": "en",
+    }
+
+
 class TestFeedbackEndpoint:
     """Tests for POST /api/v1/feedback endpoint."""
 
-    def test_feedback_with_consent_accepted(self, client: TestClient, mock_db):
+    def test_feedback_with_consent_accepted(self, client: TestClient, mock_db, valid_feedback):
         """Feedback is stored when consent is given."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "translation_id": "abc123",
-                "vote": "like",
-                "consent": True,
-            }
-        )
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert mock_db.add.called
 
-    def test_feedback_without_consent_rejected(self, client: TestClient, mock_db):
+    def test_feedback_without_consent_rejected(self, client: TestClient, mock_db, valid_feedback):
         """Feedback is rejected when consent is not given."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "translation_id": "abc123",
-                "vote": "like",
-                "consent": False,
-            }
-        )
+        valid_feedback["consent"] = False
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 200
         data = response.json()
@@ -64,68 +64,84 @@ class TestFeedbackEndpoint:
         assert data["error"]["code"] == "CONSENT_REQUIRED"
         assert not mock_db.add.called
 
-    def test_feedback_like_vote(self, client: TestClient, mock_db):
+    def test_feedback_like_vote(self, client: TestClient, mock_db, valid_feedback):
         """Like vote is accepted."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "translation_id": "abc123",
-                "vote": "like",
-                "consent": True,
-            }
-        )
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 200
         assert response.json()["success"] is True
 
-    def test_feedback_dislike_vote(self, client: TestClient, mock_db):
+    def test_feedback_dislike_vote(self, client: TestClient, mock_db, valid_feedback):
         """Dislike vote is accepted."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "translation_id": "abc123",
-                "vote": "dislike",
-                "consent": True,
-            }
-        )
+        valid_feedback["vote"] = "dislike"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 200
         assert response.json()["success"] is True
 
-    def test_feedback_invalid_vote_rejected(self, client: TestClient):
+    def test_feedback_invalid_vote_rejected(self, client: TestClient, valid_feedback):
         """Invalid vote value is rejected."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "translation_id": "abc123",
-                "vote": "invalid",
-                "consent": True,
-            }
-        )
+        valid_feedback["vote"] = "invalid"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 422
 
-    def test_feedback_missing_translation_id_rejected(self, client: TestClient):
-        """Missing translation_id is rejected."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "vote": "like",
-                "consent": True,
-            }
-        )
+    def test_feedback_missing_source_text_rejected(self, client: TestClient, valid_feedback):
+        """Missing source_text is rejected."""
+        del valid_feedback["source_text"]
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 422
 
-    def test_feedback_empty_translation_id_rejected(self, client: TestClient):
-        """Empty translation_id is rejected."""
-        response = client.post(
-            "/api/v1/feedback",
-            json={
-                "translation_id": "",
-                "vote": "like",
-                "consent": True,
-            }
-        )
+    def test_feedback_empty_source_text_rejected(self, client: TestClient, valid_feedback):
+        """Empty source_text is rejected."""
+        valid_feedback["source_text"] = ""
+        response = client.post("/api/v1/feedback", json=valid_feedback)
 
         assert response.status_code == 422
+
+    def test_feedback_invalid_source_lang_rejected(self, client: TestClient, valid_feedback):
+        """Invalid source_lang is rejected."""
+        valid_feedback["source_lang"] = "xx"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
+
+        assert response.status_code == 422
+
+    def test_feedback_invalid_target_lang_rejected(self, client: TestClient, valid_feedback):
+        """Invalid target_lang is rejected."""
+        valid_feedback["target_lang"] = "xx"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
+
+        assert response.status_code == 422
+
+    def test_feedback_with_region(self, client: TestClient, mock_db, valid_feedback):
+        """Feedback with region is accepted."""
+        valid_feedback["region"] = "zurich"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    def test_feedback_with_comment(self, client: TestClient, mock_db, valid_feedback):
+        """Feedback with comment is accepted."""
+        valid_feedback["comment"] = "Great translation!"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    def test_feedback_gsw_source(self, client: TestClient, mock_db, valid_feedback):
+        """Swiss German as source language is accepted."""
+        valid_feedback["source_lang"] = "gsw"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    def test_feedback_gsw_target(self, client: TestClient, mock_db, valid_feedback):
+        """Swiss German as target language is accepted."""
+        valid_feedback["target_lang"] = "gsw"
+        response = client.post("/api/v1/feedback", json=valid_feedback)
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True

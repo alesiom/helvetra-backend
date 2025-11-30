@@ -8,9 +8,12 @@ from pydantic import BaseModel, Field
 class FeedbackRequest(BaseModel):
     """User feedback on a translation."""
 
-    translation_id: str = Field(..., min_length=1)
     vote: str = Field(..., pattern="^(like|dislike)$")
     consent: bool
+    source_text: str = Field(..., min_length=1, max_length=5000)
+    source_lang: str = Field(..., pattern="^(en|de|gsw|fr|it)$")
+    translated_text: str = Field(..., min_length=1, max_length=15000)
+    target_lang: str = Field(..., pattern="^(en|de|gsw|fr|it)$")
     region: str | None = Field(
         None,
         pattern="^(bern|zurich|basel|stgallen|wallis|luzern)$",
