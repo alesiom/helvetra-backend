@@ -31,6 +31,8 @@ async def submit_feedback(
     feedback = Feedback(
         translation_id=request.translation_id,
         vote=request.vote,
+        region=request.region,
+        comment=request.comment,
     )
     db.add(feedback)
 
