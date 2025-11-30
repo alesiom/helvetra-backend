@@ -33,22 +33,29 @@ STRICT RULES:
 Input language: {source_lang}
 Output language: {target_lang}{formality_instruction}"""
 
-# Languages that support formality distinction (du/Sie)
-FORMALITY_LANGUAGES = {"de", "gsw"}
+# Languages with T-V distinction (informal/formal address)
+# Maps language code to (informal forms, formal forms)
+FORMALITY_FORMS = {
+    "de": ("du/ihr", "Sie"),          # German
+    "gsw": ("du/ihr", "Sie"),         # Swiss German
+    "fr": ("tu/vous informal", "vous formal"),  # French
+    "it": ("tu/voi", "Lei/Loro"),     # Italian
+}
 
 
 def get_formality_instruction(target_lang: str, formality: str) -> str:
     """
     Build formality instruction for the system prompt.
-    Only applies to German languages where du/Sie distinction matters.
+    Applies to languages with T-V distinction (German, French, Italian).
     """
-    if formality == "auto" or target_lang not in FORMALITY_LANGUAGES:
+    if formality == "auto" or target_lang not in FORMALITY_FORMS:
         return ""
 
+    informal, formal = FORMALITY_FORMS[target_lang]
     if formality == "informal":
-        return "\nFormality: Use informal address (du/ihr)"
+        return f"\nFormality: Use informal address ({informal})"
     else:  # formal
-        return "\nFormality: Use formal address (Sie)"
+        return f"\nFormality: Use formal address ({formal})"
 
 
 async def translate_text(

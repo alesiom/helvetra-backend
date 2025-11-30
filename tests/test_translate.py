@@ -243,18 +243,18 @@ class TestTranslateEndpoint:
 
         assert response.status_code == 422
 
-    def test_translate_formality_ignored_for_non_german(
+    def test_translate_formality_french_accepted(
         self, client: TestClient, httpx_mock: HTTPXMock
     ):
-        """Formality parameter is accepted but ignored for non-German targets."""
+        """Formality is accepted for French translations (tu/vous)."""
         httpx_mock.add_response(
-            json=mock_translation_response("Bonjour")
+            json=mock_translation_response("Comment allez-vous?")
         )
 
         response = client.post(
             "/api/v1/translate",
             json={
-                "text": "Hello",
+                "text": "How are you?",
                 "source_lang": "en",
                 "target_lang": "fr",
                 "formality": "formal",
@@ -262,4 +262,44 @@ class TestTranslateEndpoint:
         )
 
         assert response.status_code == 200
-        assert response.json()["data"]["translation"] == "Bonjour"
+
+    def test_translate_formality_italian_accepted(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """Formality is accepted for Italian translations (tu/Lei)."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Come sta?")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "How are you?",
+                "source_lang": "en",
+                "target_lang": "it",
+                "formality": "formal",
+            }
+        )
+
+        assert response.status_code == 200
+
+    def test_translate_formality_ignored_for_english(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """Formality parameter is accepted but ignored for English (no T-V)."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Hello")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Bonjour",
+                "source_lang": "fr",
+                "target_lang": "en",
+                "formality": "formal",
+            }
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["translation"] == "Hello"
