@@ -2,7 +2,8 @@
 Translation request and response schemas.
 """
 
-from typing import Any
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +13,10 @@ class TranslateRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
     source_lang: str = Field(..., min_length=2, max_length=3)
     target_lang: str = Field(..., min_length=2, max_length=3)
+    formality: Literal["informal", "formal", "auto"] = Field(
+        default="auto",
+        description="Formality level for German translations (du/Sie)"
+    )
 
 
 class TranslateResponse(BaseModel):
