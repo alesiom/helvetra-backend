@@ -175,3 +175,91 @@ class TestTranslateEndpoint:
         assert response.status_code == 200
         # Response is stripped
         assert response.json()["data"]["translation"] == "Bonjour"
+
+    def test_translate_formality_default_auto(self, client: TestClient, httpx_mock: HTTPXMock):
+        """Formality defaults to auto when not specified."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Hallo")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Hello",
+                "source_lang": "en",
+                "target_lang": "de",
+            }
+        )
+
+        assert response.status_code == 200
+
+    def test_translate_formality_informal_accepted(self, client: TestClient, httpx_mock: HTTPXMock):
+        """Informal formality is accepted for German translations."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Hallo")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Hello",
+                "source_lang": "en",
+                "target_lang": "de",
+                "formality": "informal",
+            }
+        )
+
+        assert response.status_code == 200
+
+    def test_translate_formality_formal_accepted(self, client: TestClient, httpx_mock: HTTPXMock):
+        """Formal formality is accepted for German translations."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Guten Tag")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Hello",
+                "source_lang": "en",
+                "target_lang": "de",
+                "formality": "formal",
+            }
+        )
+
+        assert response.status_code == 200
+
+    def test_translate_formality_invalid_rejected(self, client: TestClient):
+        """Invalid formality value is rejected."""
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Hello",
+                "source_lang": "en",
+                "target_lang": "de",
+                "formality": "invalid",
+            }
+        )
+
+        assert response.status_code == 422
+
+    def test_translate_formality_ignored_for_non_german(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """Formality parameter is accepted but ignored for non-German targets."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Bonjour")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Hello",
+                "source_lang": "en",
+                "target_lang": "fr",
+                "formality": "formal",
+            }
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["translation"] == "Bonjour"

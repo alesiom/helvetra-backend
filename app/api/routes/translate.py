@@ -22,6 +22,7 @@ async def translate(request: TranslateRequest) -> TranslateResponse:
             text=request.text,
             source_lang=request.source_lang,
             target_lang=request.target_lang,
+            formality=request.formality,
         )
         return TranslateResponse(
             success=True,
