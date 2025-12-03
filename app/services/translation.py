@@ -3,12 +3,15 @@ Translation service.
 Handles communication with the translation API and response validation.
 """
 
+import logging
 import time
 from dataclasses import dataclass
 
 import httpx
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -41,6 +44,14 @@ FORMALITY_FORMS = {
     "fr": ("tu/vous informal", "vous formal"),  # French
     "it": ("tu/voi", "Lei/Loro"),     # Italian
 }
+
+
+def get_prompt_cache_key(source_lang: str, target_lang: str, formality: str) -> str:
+    """
+    Generate a deterministic cache key for the system prompt.
+    Same language/formality combination always gets the same key.
+    """
+    return f"translate-{source_lang}-{target_lang}-{formality}"
 
 
 def get_formality_instruction(target_lang: str, formality: str) -> str:
@@ -76,6 +87,7 @@ async def translate_text(
         target_lang=target_lang,
         formality_instruction=formality_instruction,
     )
+    cache_key = get_prompt_cache_key(source_lang, target_lang, formality)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -92,11 +104,20 @@ async def translate_text(
                 ],
                 "temperature": 0.1,
                 "max_tokens": 2000,
+                "prompt_cache_key": cache_key,
             },
             timeout=30.0,
         )
         response.raise_for_status()
         data = response.json()
+
+    # Log token usage for monitoring
+    usage = data.get("usage", {})
+    prompt_tokens_details = usage.get("prompt_tokens_details", {})
+    cached_tokens = prompt_tokens_details.get("cached_tokens", 0)
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    if cached_tokens > 0:
+        logger.info(f"Prompt cache hit: {cached_tokens}/{prompt_tokens} tokens cached")
 
     translation = data["choices"][0]["message"]["content"].strip()
 
