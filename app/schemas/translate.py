@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 class TranslateRequest(BaseModel):
     """Incoming translation request."""
 
-    text: str = Field(..., min_length=1, max_length=5000)
+    text: str = Field(..., min_length=1, max_length=1000)
     source_lang: str = Field(..., min_length=2, max_length=3)
     target_lang: str = Field(..., min_length=2, max_length=3)
     formality: Literal["informal", "formal", "auto"] = Field(

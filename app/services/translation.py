@@ -106,14 +106,14 @@ async def translate_text(
                 "max_tokens": 2000,
                 "prompt_cache_key": cache_key,
             },
-            timeout=30.0,
+            timeout=60.0,
         )
         response.raise_for_status()
         data = response.json()
 
     # Log token usage for monitoring
-    usage = data.get("usage", {})
-    prompt_tokens_details = usage.get("prompt_tokens_details", {})
+    usage = data.get("usage") or {}
+    prompt_tokens_details = usage.get("prompt_tokens_details") or {}
     cached_tokens = prompt_tokens_details.get("cached_tokens", 0)
     prompt_tokens = usage.get("prompt_tokens", 0)
     if cached_tokens > 0:

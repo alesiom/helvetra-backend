@@ -3,11 +3,14 @@ Translation endpoint.
 Handles text translation requests between supported languages.
 """
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.translate import TranslateRequest, TranslateResponse
 from app.services.translation import translate_text
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -37,4 +40,5 @@ async def translate(request: TranslateRequest) -> TranslateResponse:
             },
         )
     except Exception as e:
+        logger.exception(f"Translation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
