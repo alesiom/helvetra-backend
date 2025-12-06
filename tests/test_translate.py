@@ -70,11 +70,11 @@ class TestTranslateEndpoint:
         assert response.status_code == 422
 
     def test_translate_text_too_long_rejected(self, client: TestClient):
-        """Text exceeding 5000 characters is rejected."""
+        """Text exceeding 1000 characters is rejected."""
         response = client.post(
             "/api/v1/translate",
             json={
-                "text": "a" * 5001,
+                "text": "a" * 1001,
                 "source_lang": "en",
                 "target_lang": "fr",
             }
@@ -83,7 +83,7 @@ class TestTranslateEndpoint:
         assert response.status_code == 422
 
     def test_translate_max_length_accepted(self, client: TestClient, httpx_mock: HTTPXMock):
-        """Text at exactly 5000 characters is accepted."""
+        """Text at exactly 1000 characters is accepted."""
         httpx_mock.add_response(
             json=mock_translation_response("translated")
         )
@@ -91,7 +91,7 @@ class TestTranslateEndpoint:
         response = client.post(
             "/api/v1/translate",
             json={
-                "text": "a" * 5000,
+                "text": "a" * 1000,
                 "source_lang": "en",
                 "target_lang": "fr",
             }
