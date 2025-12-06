@@ -4,6 +4,7 @@ Centralizes all settings to ensure consistent access across the app.
 """
 
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +38,12 @@ class Settings(BaseSettings):
 
     # Encryption (for PII)
     encryption_key: str = ""
+
+    # Authentication
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 30
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -1,0 +1,70 @@
+"""
+Authentication request and response schemas.
+"""
+
+import re
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+class RegisterRequest(BaseModel):
+    """User registration request."""
+
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        """Ensure password meets minimum security requirements."""
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one number")
+        return v
+
+
+class LoginRequest(BaseModel):
+    """User login request."""
+
+    email: EmailStr
+    password: str
+
+
+class RefreshRequest(BaseModel):
+    """Token refresh request."""
+
+    refresh_token: str
+
+
+class TokenResponse(BaseModel):
+    """Authentication token response."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int = Field(description="Access token expiry in seconds")
+
+
+class UserResponse(BaseModel):
+    """User profile response."""
+
+    id: UUID
+    email: str
+    email_verified: bool
+
+
+class AuthResponse(BaseModel):
+    """Standard auth response wrapper."""
+
+    success: bool
+    data: dict | None = None
+    error: dict[str, str] | None = None
+
+
+class MessageResponse(BaseModel):
+    """Simple message response for logout etc."""
+
+    success: bool
+    message: str
