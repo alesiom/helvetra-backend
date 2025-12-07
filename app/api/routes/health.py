@@ -61,9 +61,7 @@ async def health_check() -> dict:
     translation_status = await check_translation_api()
 
     # Overall status is "ok" only if all services are healthy
-    services_ok = all(
-        status == "ok" for status in [db_status, redis_status, translation_status]
-    )
+    services_ok = all(status == "ok" for status in [db_status, redis_status, translation_status])
 
     return {
         "status": "ok" if services_ok else "degraded",

@@ -14,8 +14,7 @@ class TranslateRequest(BaseModel):
     source_lang: str = Field(..., min_length=2, max_length=3)
     target_lang: str = Field(..., min_length=2, max_length=3)
     formality: Literal["informal", "formal", "auto"] = Field(
-        default="auto",
-        description="Formality level for German translations (du/Sie)"
+        default="auto", description="Formality level for German translations (du/Sie)"
     )
 
 

@@ -19,6 +19,7 @@ settings = get_settings()
 @dataclass
 class TranslationResult:
     """Result from the translation service."""
+
     translation: str
     processing_time_ms: int
 
@@ -39,10 +40,10 @@ Output language: {target_lang}{formality_instruction}"""
 # Languages with T-V distinction (informal/formal address)
 # Maps language code to (informal forms, formal forms)
 FORMALITY_FORMS = {
-    "de": ("du/ihr", "Sie"),          # German
-    "gsw": ("du/ihr", "Sie"),         # Swiss German
+    "de": ("du/ihr", "Sie"),  # German
+    "gsw": ("du/ihr", "Sie"),  # Swiss German
     "fr": ("tu/vous informal", "vous formal"),  # French
-    "it": ("tu/voi", "Lei/Loro"),     # Italian
+    "it": ("tu/voi", "Lei/Loro"),  # Italian
 }
 
 

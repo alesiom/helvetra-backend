@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     email_verified: bool
+    tier: str
 
 
 class AuthResponse(BaseModel):

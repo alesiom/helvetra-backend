@@ -59,9 +59,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def create_access_token(user_id: UUID) -> str:
     """Create a short-lived JWT access token."""
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.access_token_expire_minutes
-    )
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
         "sub": str(user_id),
         "exp": expire,
@@ -91,9 +89,7 @@ def decode_access_token(token: str) -> UUID | None:
     Returns user_id if valid, None if invalid or expired.
     """
     try:
-        payload = jwt.decode(
-            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
-        )
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         if payload.get("type") != "access":
             return None
         user_id = payload.get("sub")

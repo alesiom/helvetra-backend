@@ -200,9 +200,19 @@ class TestLoginEndpoint:
 
     def test_login_success(self, client: TestClient, mock_db, valid_login, mock_user):
         """Successful login returns user and tokens."""
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_user
-        mock_db.execute.return_value = mock_result
+        from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+
+        # Mock subscription for the user
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription.tier = SubscriptionTier.FREE
+        mock_subscription.status = SubscriptionStatus.ACTIVE
+
+        # First call returns user, second returns None (no subscription yet)
+        mock_result_user = MagicMock()
+        mock_result_user.scalar_one_or_none.return_value = mock_user
+        mock_result_sub = MagicMock()
+        mock_result_sub.scalar_one_or_none.return_value = None
+        mock_db.execute.side_effect = [mock_result_user, mock_result_sub]
 
         response = client.post("/api/v1/auth/login", json=valid_login)
 
@@ -211,6 +221,7 @@ class TestLoginEndpoint:
         assert data["success"] is True
         assert "user" in data["data"]
         assert "tokens" in data["data"]
+        assert data["data"]["user"]["tier"] == "free"
 
     def test_login_wrong_password_rejected(
         self, client: TestClient, mock_db, valid_login, mock_user
@@ -348,9 +359,12 @@ class TestMeEndpoint:
 
     def test_me_with_valid_token(self, client: TestClient, mock_db, mock_user):
         """Valid access token returns user profile."""
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_user
-        mock_db.execute.return_value = mock_result
+        # First call returns user (for auth), second returns None (no subscription)
+        mock_result_user = MagicMock()
+        mock_result_user.scalar_one_or_none.return_value = mock_user
+        mock_result_sub = MagicMock()
+        mock_result_sub.scalar_one_or_none.return_value = None
+        mock_db.execute.side_effect = [mock_result_user, mock_result_sub]
 
         with patch("app.config.get_settings") as mock_settings:
             mock_settings.return_value.jwt_secret_key = "test_secret"
@@ -367,6 +381,7 @@ class TestMeEndpoint:
         data = response.json()
         assert data["success"] is True
         assert data["data"]["user"]["email"] == mock_user.email
+        assert data["data"]["user"]["tier"] == "free"
 
     def test_me_without_token_rejected(self, client: TestClient):
         """Request without token returns 401."""

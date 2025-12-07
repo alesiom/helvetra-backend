@@ -109,6 +109,7 @@ async def register(
 
     log_auth_event(AuthEvent.REGISTER_SUCCESS, client_ip, request.email, user_agent)
 
+    # New users always start on free tier
     return AuthResponse(
         success=True,
         data={
@@ -116,6 +117,7 @@ async def register(
                 id=user.id,
                 email=user.email,
                 email_verified=user.email_verified,
+                tier="free",
             ).model_dump(),
             "tokens": TokenResponse(
                 access_token=access_token,
@@ -206,6 +208,11 @@ async def login(
     await auth_rate_limiter.clear_failed_attempts(request.email)
     log_auth_event(AuthEvent.LOGIN_SUCCESS, client_ip, request.email, user_agent)
 
+    # Get subscription tier
+    from app.services.subscription import get_or_create_subscription
+
+    subscription = await get_or_create_subscription(db, user.id)
+
     # Create tokens
     access_token = create_access_token(user.id)
     raw_refresh, hashed_refresh = create_refresh_token()
@@ -236,6 +243,7 @@ async def login(
                     id=user.id,
                     email=user.email,
                     email_verified=user.email_verified,
+                    tier=subscription.tier.value,
                 ).model_dump(),
                 "tokens": TokenResponse(
                     access_token=access_token,
@@ -252,6 +260,7 @@ async def login(
                 id=user.id,
                 email=user.email,
                 email_verified=user.email_verified,
+                tier=subscription.tier.value,
             ).model_dump(),
             "tokens": TokenResponse(
                 access_token=access_token,
@@ -373,9 +382,7 @@ async def logout(
 
     if raw_token:
         token_hash = hash_refresh_token(raw_token)
-        result = await db.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-        )
+        result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
         stored_token = result.scalar_one_or_none()
 
         if stored_token:
@@ -391,8 +398,13 @@ async def logout(
 @router.get("/me", response_model=AuthResponse)
 async def me(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     """Get current authenticated user profile."""
+    from app.services.subscription import get_or_create_subscription
+
+    subscription = await get_or_create_subscription(db, current_user.id)
+
     return AuthResponse(
         success=True,
         data={
@@ -400,6 +412,7 @@ async def me(
                 id=current_user.id,
                 email=current_user.email,
                 email_verified=current_user.email_verified,
+                tier=subscription.tier.value,
             ).model_dump(),
         },
     )
