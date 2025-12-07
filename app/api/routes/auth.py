@@ -3,7 +3,7 @@ Authentication endpoints.
 Handles user registration, login, token refresh, and logout.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from app.services.audit_log import AuthEvent, log_auth_event
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -28,20 +29,60 @@ from app.services.auth import (
     hash_refresh_token,
     verify_password,
 )
+from app.services.auth_rate_limiter import auth_rate_limiter
 
 settings = get_settings()
 router = APIRouter(prefix="/auth")
 
 
+def get_client_ip(request: Request) -> str:
+    """Extract client IP from request, handling proxy headers."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def get_user_agent(request: Request) -> str | None:
+    """Extract user agent from request."""
+    return request.headers.get("User-Agent")
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: RegisterRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     """Register a new user with email and password."""
+    # Check registration rate limit (3/hour per IP)
+    client_ip = get_client_ip(http_request)
+    user_agent = get_user_agent(http_request)
+    rate_result = await auth_rate_limiter.check_register_limit(client_ip)
+    if not rate_result.allowed:
+        log_auth_event(
+            AuthEvent.RATE_LIMITED,
+            client_ip,
+            request.email,
+            user_agent,
+            {"endpoint": "register"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many registration attempts. Retry in {rate_result.retry_after}s.",
+            headers={"Retry-After": str(rate_result.retry_after)},
+        )
+
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == request.email))
     if result.scalar_one_or_none():
+        log_auth_event(
+            AuthEvent.REGISTER_FAILED,
+            client_ip,
+            request.email,
+            user_agent,
+            {"reason": "email_exists"},
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
@@ -66,6 +107,8 @@ async def register(
     )
     db.add(refresh_token)
 
+    log_auth_event(AuthEvent.REGISTER_SUCCESS, client_ip, request.email, user_agent)
+
     return AuthResponse(
         success=True,
         data={
@@ -86,34 +129,121 @@ async def register(
 @router.post("/login", response_model=AuthResponse)
 async def login(
     request: LoginRequest,
+    http_request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     """Authenticate user with email and password."""
+    client_ip = get_client_ip(http_request)
+    user_agent = get_user_agent(http_request)
+
+    # Check login rate limit (5/min per IP)
+    rate_result = await auth_rate_limiter.check_login_limit(client_ip)
+    if not rate_result.allowed:
+        log_auth_event(
+            AuthEvent.RATE_LIMITED,
+            client_ip,
+            request.email,
+            user_agent,
+            {"endpoint": "login"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Try again in {rate_result.retry_after} seconds.",
+            headers={"Retry-After": str(rate_result.retry_after)},
+        )
+
+    # Check if account is locked out
+    lockout_result = await auth_rate_limiter.check_account_lockout(request.email)
+    if lockout_result.locked_out:
+        log_auth_event(
+            AuthEvent.ACCOUNT_LOCKED,
+            client_ip,
+            request.email,
+            user_agent,
+            {"lockout_remaining": lockout_result.lockout_remaining},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Account temporarily locked. Retry in {lockout_result.lockout_remaining}s.",
+            headers={"Retry-After": str(lockout_result.lockout_remaining)},
+        )
+
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
 
     if not user or not user.password_hash:
+        # Record failed attempt for brute force protection
+        failed_result = await auth_rate_limiter.record_failed_attempt(request.email)
+        log_auth_event(
+            AuthEvent.LOGIN_FAILED,
+            client_ip,
+            request.email,
+            user_agent,
+            {"reason": "invalid_credentials", "attempts_remaining": failed_result.remaining},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
     if not verify_password(request.password, user.password_hash):
+        # Record failed attempt for brute force protection
+        failed_result = await auth_rate_limiter.record_failed_attempt(request.email)
+        log_auth_event(
+            AuthEvent.LOGIN_FAILED,
+            client_ip,
+            request.email,
+            user_agent,
+            {"reason": "invalid_password", "attempts_remaining": failed_result.remaining},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
+    # Clear failed attempts on successful login
+    await auth_rate_limiter.clear_failed_attempts(request.email)
+    log_auth_event(AuthEvent.LOGIN_SUCCESS, client_ip, request.email, user_agent)
+
     # Create tokens
     access_token = create_access_token(user.id)
     raw_refresh, hashed_refresh = create_refresh_token()
 
-    refresh_token = RefreshToken(
+    refresh_token_obj = RefreshToken(
         user_id=user.id,
         token_hash=hashed_refresh,
         expires_at=get_refresh_token_expiry(),
     )
-    db.add(refresh_token)
+    db.add(refresh_token_obj)
+
+    # Set refresh token as HttpOnly cookie if requested
+    if request.use_cookie:
+        response.set_cookie(
+            key="refresh_token",
+            value=raw_refresh,
+            httponly=True,
+            secure=not settings.debug,  # Secure in production
+            samesite="strict",
+            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            path="/api/v1/auth",
+        )
+        # Don't include refresh token in response body when using cookies
+        return AuthResponse(
+            success=True,
+            data={
+                "user": UserResponse(
+                    id=user.id,
+                    email=user.email,
+                    email_verified=user.email_verified,
+                ).model_dump(),
+                "tokens": TokenResponse(
+                    access_token=access_token,
+                    refresh_token="",  # Empty, stored in cookie
+                    expires_in=settings.access_token_expire_minutes * 60,
+                ).model_dump(),
+            },
+        )
 
     return AuthResponse(
         success=True,
@@ -134,11 +264,21 @@ async def login(
 
 @router.post("/refresh", response_model=AuthResponse)
 async def refresh(
-    request: RefreshRequest,
+    request: RefreshRequest | None = None,
+    response: Response = None,
+    refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     """Exchange a refresh token for new access and refresh tokens."""
-    token_hash = hash_refresh_token(request.refresh_token)
+    # Accept token from cookie or request body
+    raw_token = refresh_token_cookie or (request.refresh_token if request else None)
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token required",
+        )
+
+    token_hash = hash_refresh_token(raw_token)
 
     result = await db.execute(
         select(RefreshToken)
@@ -186,6 +326,28 @@ async def refresh(
     )
     db.add(new_refresh_token)
 
+    # If refresh token came from cookie, update cookie with new token
+    if refresh_token_cookie:
+        response.set_cookie(
+            key="refresh_token",
+            value=raw_refresh,
+            httponly=True,
+            secure=not settings.debug,
+            samesite="strict",
+            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            path="/api/v1/auth",
+        )
+        return AuthResponse(
+            success=True,
+            data={
+                "tokens": TokenResponse(
+                    access_token=access_token,
+                    refresh_token="",  # Empty, stored in cookie
+                    expires_in=settings.access_token_expire_minutes * 60,
+                ).model_dump(),
+            },
+        )
+
     return AuthResponse(
         success=True,
         data={
@@ -200,19 +362,28 @@ async def refresh(
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
-    request: RefreshRequest,
+    request: RefreshRequest | None = None,
+    response: Response = None,
+    refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     """Revoke a refresh token to log out."""
-    token_hash = hash_refresh_token(request.refresh_token)
+    # Accept token from cookie or request body
+    raw_token = refresh_token_cookie or (request.refresh_token if request else None)
 
-    result = await db.execute(
-        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-    )
-    stored_token = result.scalar_one_or_none()
+    if raw_token:
+        token_hash = hash_refresh_token(raw_token)
+        result = await db.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        )
+        stored_token = result.scalar_one_or_none()
 
-    if stored_token:
-        stored_token.revoked = True
+        if stored_token:
+            stored_token.revoked = True
+
+    # Clear the refresh token cookie if it was set
+    if refresh_token_cookie:
+        response.delete_cookie(key="refresh_token", path="/api/v1/auth")
 
     return MessageResponse(success=True, message="Logged out successfully")
 

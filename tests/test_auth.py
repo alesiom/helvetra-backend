@@ -18,6 +18,7 @@ from app.services.auth import (
     create_refresh_token,
     hash_password,
 )
+from app.services.auth_rate_limiter import AuthRateLimitResult
 
 
 @pytest.fixture
@@ -28,6 +29,35 @@ def mock_db():
     session.flush = AsyncMock()
     session.execute = AsyncMock()
     return session
+
+
+@pytest.fixture(autouse=True)
+def mock_rate_limiters():
+    """Mock both rate limiters (middleware and auth-specific)."""
+    # Mock middleware rate limiter
+    with patch("app.core.middleware.rate_limiter") as mock_global:
+        mock_result = MagicMock()
+        mock_result.allowed = True
+        mock_result.remaining = 100
+        mock_result.reset_at = 0
+        mock_global.check_rate_limit = AsyncMock(return_value=mock_result)
+
+        # Mock auth rate limiter
+        with patch("app.api.routes.auth.auth_rate_limiter") as mock_auth:
+            mock_auth.check_register_limit = AsyncMock(
+                return_value=AuthRateLimitResult(allowed=True, remaining=10)
+            )
+            mock_auth.check_login_limit = AsyncMock(
+                return_value=AuthRateLimitResult(allowed=True, remaining=10)
+            )
+            mock_auth.check_account_lockout = AsyncMock(
+                return_value=AuthRateLimitResult(allowed=True, remaining=10)
+            )
+            mock_auth.record_failed_attempt = AsyncMock(
+                return_value=AuthRateLimitResult(allowed=True, remaining=9)
+            )
+            mock_auth.clear_failed_attempts = AsyncMock()
+            yield mock_auth
 
 
 @pytest.fixture

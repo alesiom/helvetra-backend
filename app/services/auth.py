@@ -4,8 +4,11 @@ Handles password hashing, JWT token creation, and token verification.
 """
 
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from uuid import UUID
 
 import bcrypt
@@ -16,6 +19,22 @@ from app.config import get_settings
 settings = get_settings()
 
 
+@lru_cache(maxsize=1)
+def _load_common_passwords() -> frozenset[str]:
+    """Load common passwords list from file (cached)."""
+    password_file = Path(__file__).parent.parent / "data" / "common_passwords.txt"
+    if password_file.exists():
+        with open(password_file) as f:
+            return frozenset(line.strip().lower() for line in f if line.strip())
+    return frozenset()
+
+
+def is_common_password(password: str) -> bool:
+    """Check if password is in the common passwords list."""
+    common_passwords = _load_common_passwords()
+    return password.lower() in common_passwords
+
+
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
     salt = bcrypt.gensalt()
@@ -23,8 +42,19 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against its hash."""
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
+    """
+    Verify a password against its hash using timing-safe comparison.
+    bcrypt.checkpw is already timing-safe, but we add an extra layer.
+    """
+    try:
+        result = bcrypt.checkpw(password.encode(), password_hash.encode())
+        # Use hmac.compare_digest for the final boolean comparison
+        # This prevents timing attacks on the result itself
+        return hmac.compare_digest(str(result), str(True))
+    except Exception:
+        # On any error, return False in constant time
+        hmac.compare_digest("a", "b")
+        return False
 
 
 def create_access_token(user_id: UUID) -> str:

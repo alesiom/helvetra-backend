@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.services.auth import is_common_password
+
 
 class RegisterRequest(BaseModel):
     """User registration request."""
@@ -22,6 +24,8 @@ class RegisterRequest(BaseModel):
             raise ValueError("Password must contain at least one letter")
         if not re.search(r"\d", v):
             raise ValueError("Password must contain at least one number")
+        if is_common_password(v):
+            raise ValueError("Password is too common. Please choose a stronger password")
         return v
 
 
@@ -30,6 +34,9 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+    use_cookie: bool = Field(
+        default=False, description="Store refresh token in HttpOnly cookie instead of body"
+    )
 
 
 class RefreshRequest(BaseModel):
