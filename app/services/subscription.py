@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tiers import Tier, get_tier_config
 from app.models.subscription import (
     CreditBalance,
     CreditTransaction,
@@ -18,13 +19,6 @@ from app.models.subscription import (
     SubscriptionTier,
     UsagePeriod,
 )
-
-# Character limits per tier per month
-TIER_LIMITS: dict[SubscriptionTier, int] = {
-    SubscriptionTier.FREE: 10_000,
-    SubscriptionTier.PRO: 500_000,
-    SubscriptionTier.BUSINESS: 2_000_000,
-}
 
 
 @dataclass
@@ -87,12 +81,16 @@ async def get_or_create_usage_period(
         else:
             period_end = period_start.replace(month=now.month + 1)
 
+        # Map SubscriptionTier to Tier for config lookup
+        tier_key = Tier(tier.value)
+        config = get_tier_config(tier_key)
+
         period = UsagePeriod(
             user_id=user_id,
             period_start=period_start,
             period_end=period_end,
             characters_used=0,
-            characters_limit=TIER_LIMITS[tier],
+            characters_limit=config.period_limit,
         )
         db.add(period)
         await db.flush()
@@ -223,7 +221,9 @@ async def update_subscription_tier(
     if old_tier != tier:
         period = await get_current_usage_period(db, user_id)
         if period:
-            period.characters_limit = TIER_LIMITS[tier]
+            tier_key = Tier(tier.value)
+            config = get_tier_config(tier_key)
+            period.characters_limit = config.period_limit
 
     await db.flush()
     return subscription

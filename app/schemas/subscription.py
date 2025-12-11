@@ -23,3 +23,22 @@ class SubscriptionResponse(BaseModel):
     period_end: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class TierLimitsResponse(BaseModel):
+    """Tier configuration and limits for the current user."""
+
+    tier: str
+    max_chars_per_request: int
+    period_limit: int
+    period_type: str
+    formality: bool
+
+
+class AnonymousUsageResponse(BaseModel):
+    """Usage status for anonymous users."""
+
+    characters_used: int
+    characters_limit: int
+    characters_remaining: int
+    reset_at: int
