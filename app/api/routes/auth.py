@@ -17,8 +17,10 @@ from app.schemas.auth import (
     MessageResponse,
     RefreshRequest,
     RegisterRequest,
+    ResendVerificationRequest,
     TokenResponse,
     UserResponse,
+    VerifyEmailRequest,
 )
 from app.services.audit_log import AuthEvent, log_auth_event
 from app.services.auth import (
@@ -95,6 +97,11 @@ async def register(
     )
     db.add(user)
     await db.flush()
+
+    # Send verification email
+    from app.services.email_verification import send_verification_email
+
+    await send_verification_email(db, user, request.locale)
 
     # Create tokens
     access_token = create_access_token(user.id)
@@ -416,3 +423,58 @@ async def me(
             ).model_dump(),
         },
     )
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+async def verify_email(
+    request: VerifyEmailRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """Verify user's email address with token from verification email."""
+    from app.services.email_verification import verify_email_token
+
+    user = await verify_email_token(db, request.token)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
+
+    return MessageResponse(success=True, message="Email verified successfully")
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification(
+    request: ResendVerificationRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """Resend verification email to user."""
+    from app.services.email_verification import can_resend_verification, send_verification_email
+
+    # Find user by email
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+
+    # Always return success to prevent email enumeration
+    if not user:
+        return MessageResponse(success=True, message="If the email exists, a verification link has been sent")
+
+    # Already verified
+    if user.email_verified:
+        return MessageResponse(success=True, message="Email is already verified")
+
+    # Check rate limit
+    can_resend, retry_after = await can_resend_verification(db, user.id)
+    if not can_resend:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Please wait {retry_after} seconds before requesting another email",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # Send verification email
+    await send_verification_email(db, user, request.locale)
+
+    return MessageResponse(success=True, message="Verification email sent")

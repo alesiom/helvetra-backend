@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
 
+    # Email (SMTP)
+    smtp_host: str = "mail.infomaniak.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "no-reply@helvetra.ch"
+    smtp_from_name: str = "Helvetra"
+    email_verification_expire_hours: int = 24
+    email_verification_base_url: str = "https://helvetra.ch/verify-email"
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins from comma-separated string."""

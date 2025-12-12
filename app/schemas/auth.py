@@ -15,6 +15,7 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
+    locale: str | None = Field(default=None, description="User's preferred language (en, de, fr, it)")
 
     @field_validator("password")
     @classmethod
@@ -76,3 +77,16 @@ class MessageResponse(BaseModel):
 
     success: bool
     message: str
+
+
+class VerifyEmailRequest(BaseModel):
+    """Email verification request."""
+
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    """Resend verification email request."""
+
+    email: EmailStr
+    locale: str | None = Field(default=None, description="User's preferred language (en, de, fr, it)")
