@@ -6,7 +6,7 @@ Initializes the app with middleware and routes.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, feedback, health, languages, subscription, translate
+from app.api.routes import auth, feedback, health, languages, subscription, translate, webhooks
 from app.config import get_settings
 from app.core.middleware import RateLimitMiddleware
 
@@ -36,3 +36,4 @@ app.include_router(languages.router, prefix="/api/v1", tags=["Languages"])
 app.include_router(translate.router, prefix="/api/v1", tags=["Translation"])
 app.include_router(feedback.router, prefix="/api/v1", tags=["Feedback"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["Subscription"])
+app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
