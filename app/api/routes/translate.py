@@ -96,14 +96,23 @@ async def translate(
             source_lang=request.source_lang,
             target_lang=request.target_lang,
             formality=request.formality,
+            dialect=request.dialect,
         )
+
+        # Build response data
+        response_data = {
+            "translation": result.translation,
+            "source_lang": result.detected_source_lang or request.source_lang,
+            "target_lang": request.target_lang,
+        }
+
+        # Include detected_source_lang when auto-detection was used
+        if result.detected_source_lang:
+            response_data["detected_source_lang"] = result.detected_source_lang
+
         return TranslateResponse(
             success=True,
-            data={
-                "translation": result.translation,
-                "source_lang": request.source_lang,
-                "target_lang": request.target_lang,
-            },
+            data=response_data,
             meta={
                 "characters": text_length,
                 "processing_time_ms": result.processing_time_ms,
