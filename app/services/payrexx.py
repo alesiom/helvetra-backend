@@ -38,6 +38,17 @@ class PayrexxTransaction:
     time: datetime | None
 
 
+@dataclass
+class PayrexxSubscriptionEvent:
+    """Parsed Payrexx subscription event data."""
+
+    id: str
+    status: str
+    user_email: str | None
+    valid_until: datetime | None
+    start: datetime | None
+
+
 def map_product_to_tier(product_id: str | None) -> SubscriptionTier | None:
     """Map Payrexx product ID to subscription tier."""
     if not product_id:
@@ -52,10 +63,10 @@ def map_product_to_tier(product_id: str | None) -> SubscriptionTier | None:
 
 
 def parse_transaction(payload: dict[str, Any]) -> PayrexxTransaction:
-    """Parse Payrexx webhook payload into structured data."""
+    """Parse Payrexx transaction webhook payload."""
     transaction = payload.get("transaction", {})
-    invoice = payload.get("invoice", {})
-    contact = payload.get("contact", {})
+    invoice = transaction.get("invoice", {})
+    contact = transaction.get("contact", {})
 
     # Parse time if present
     time_str = transaction.get("time")
@@ -74,6 +85,34 @@ def parse_transaction(payload: dict[str, Any]) -> PayrexxTransaction:
         product_id=invoice.get("productId") or invoice.get("referenceId"),
         user_email=contact.get("email"),
         time=parsed_time,
+    )
+
+
+def parse_subscription_event(payload: dict[str, Any]) -> PayrexxSubscriptionEvent:
+    """Parse Payrexx subscription webhook payload."""
+    subscription = payload.get("subscription", {})
+    contact = subscription.get("contact", {})
+
+    # Parse dates
+    valid_until = None
+    start = None
+    if subscription.get("valid_until"):
+        try:
+            valid_until = datetime.fromisoformat(subscription["valid_until"])
+        except (ValueError, AttributeError):
+            pass
+    if subscription.get("start"):
+        try:
+            start = datetime.fromisoformat(subscription["start"])
+        except (ValueError, AttributeError):
+            pass
+
+    return PayrexxSubscriptionEvent(
+        id=str(subscription.get("id", "")),
+        status=subscription.get("status", ""),
+        user_email=contact.get("email"),
+        valid_until=valid_until,
+        start=start,
     )
 
 
@@ -231,16 +270,73 @@ async def handle_refund(
     return True
 
 
+async def handle_subscription_event(
+    db: AsyncSession, sub_event: PayrexxSubscriptionEvent
+) -> bool:
+    """Handle subscription status update from Payrexx."""
+    if not sub_event.user_email:
+        logger.warning(f"No email in subscription event {sub_event.id}")
+        return False
+
+    subscription = await get_subscription_by_user_email(db, sub_event.user_email)
+    if not subscription:
+        logger.warning(f"No subscription found for email {sub_event.user_email}")
+        return False
+
+    if sub_event.status == "active":
+        # Activate subscription
+        subscription.tier = SubscriptionTier.PRO
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.source = SubscriptionSource.PAYREXX
+        subscription.external_id = str(sub_event.id)
+
+        # Set period dates from Payrexx data
+        if sub_event.start:
+            subscription.current_period_start = datetime.combine(
+                sub_event.start.date(), datetime.min.time(), tzinfo=timezone.utc
+            )
+        else:
+            subscription.current_period_start = datetime.now(timezone.utc)
+
+        if sub_event.valid_until:
+            subscription.current_period_end = datetime.combine(
+                sub_event.valid_until.date(), datetime.min.time(), tzinfo=timezone.utc
+            )
+        else:
+            subscription.current_period_end = subscription.current_period_start + timedelta(days=30)
+
+        logger.info(f"Activated PRO subscription for user {subscription.user_id} via subscription event")
+        return True
+
+    elif sub_event.status == "cancelled":
+        subscription.status = SubscriptionStatus.CANCELLED
+        logger.info(f"Cancelled subscription for user {subscription.user_id}")
+        return True
+
+    else:
+        logger.info(f"Unhandled subscription status: {sub_event.status}")
+        return True
+
+
 async def process_webhook(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
     """
     Process Payrexx webhook event.
-    Returns result dict with success status and message.
+    Handles both transaction and subscription event types.
     """
-    transaction = parse_transaction(payload)
-    event_id = transaction.id
+    # Determine event type - subscription or transaction
+    is_subscription_event = "subscription" in payload and "transaction" not in payload
+
+    if is_subscription_event:
+        sub_event = parse_subscription_event(payload)
+        event_id = f"sub_{sub_event.id}"
+        event_type = f"subscription_{sub_event.status}"
+    else:
+        transaction = parse_transaction(payload)
+        event_id = transaction.id
+        event_type = transaction.status
 
     if not event_id:
-        return {"success": False, "error": "Missing transaction ID"}
+        return {"success": False, "error": "Missing event ID"}
 
     # Check idempotency
     existing = await check_idempotency(db, "payrexx", event_id)
@@ -249,26 +345,29 @@ async def process_webhook(db: AsyncSession, payload: dict[str, Any]) -> dict[str
         return {"success": True, "message": "Already processed"}
 
     # Record event for audit
-    event_type = transaction.status
     webhook_event = existing or await record_webhook_event(
         db, "payrexx", event_id, event_type, payload
     )
 
     try:
-        # Route to appropriate handler based on status
         success = False
-        if transaction.status == "confirmed":
-            success = await handle_payment_confirmed(db, transaction)
-        elif transaction.status in ("declined", "error"):
-            success = await handle_payment_failed(db, transaction)
-        elif transaction.status == "cancelled":
-            success = await handle_subscription_cancelled(db, transaction)
-        elif transaction.status in ("refunded", "partially-refunded"):
-            success = await handle_refund(db, transaction)
+
+        if is_subscription_event:
+            # Handle subscription event
+            success = await handle_subscription_event(db, sub_event)
         else:
-            # Log but don't fail for unknown statuses
-            logger.info(f"Unhandled transaction status: {transaction.status}")
-            success = True
+            # Handle transaction event
+            if transaction.status == "confirmed":
+                success = await handle_payment_confirmed(db, transaction)
+            elif transaction.status in ("declined", "error"):
+                success = await handle_payment_failed(db, transaction)
+            elif transaction.status == "cancelled":
+                success = await handle_subscription_cancelled(db, transaction)
+            elif transaction.status in ("refunded", "partially-refunded"):
+                success = await handle_refund(db, transaction)
+            else:
+                logger.info(f"Unhandled transaction status: {transaction.status}")
+                success = True
 
         webhook_event.processed = success
         await db.flush()
