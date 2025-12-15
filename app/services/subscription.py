@@ -115,6 +115,10 @@ async def get_usage_status(db: AsyncSession, user_id: uuid.UUID) -> UsageStatus:
     remaining_in_period = period.characters_limit - period.characters_used
     can_translate = remaining_in_period > 0 or credits > 0
 
+    # Use subscription billing dates if available (from Payrexx), otherwise usage period dates
+    billing_start = subscription.current_period_start or period.period_start
+    billing_end = subscription.current_period_end or period.period_end
+
     return UsageStatus(
         tier=subscription.tier,
         status=subscription.status,
@@ -122,8 +126,8 @@ async def get_usage_status(db: AsyncSession, user_id: uuid.UUID) -> UsageStatus:
         characters_limit=period.characters_limit,
         credits_remaining=credits,
         can_translate=can_translate,
-        period_start=period.period_start,
-        period_end=period.period_end,
+        period_start=billing_start,
+        period_end=billing_end,
     )
 
 
