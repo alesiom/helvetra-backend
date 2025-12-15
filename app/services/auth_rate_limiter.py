@@ -28,8 +28,8 @@ class AuthRateLimiter:
     """Redis-based rate limiter for authentication endpoints."""
 
     # Rate limits per endpoint type
-    LOGIN_LIMIT_PER_MINUTE = 5
-    REGISTER_LIMIT_PER_HOUR = 3
+    LOGIN_LIMIT_PER_MINUTE = 10
+    REGISTER_LIMIT_PER_HOUR = 10
 
     # Brute force protection
     MAX_FAILED_ATTEMPTS = 10

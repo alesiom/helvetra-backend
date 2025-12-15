@@ -57,9 +57,10 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     """Register a new user with email and password."""
-    # Check registration rate limit (3/hour per IP)
     client_ip = get_client_ip(http_request)
     user_agent = get_user_agent(http_request)
+
+    # Check registration rate limit (10/hour per IP)
     rate_result = await auth_rate_limiter.check_register_limit(client_ip)
     if not rate_result.allowed:
         log_auth_event(
@@ -71,7 +72,7 @@ async def register(
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many registration attempts. Retry in {rate_result.retry_after}s.",
+            detail="Too many attempts. Please wait a moment.",
             headers={"Retry-After": str(rate_result.retry_after)},
         )
 
@@ -146,7 +147,7 @@ async def login(
     client_ip = get_client_ip(http_request)
     user_agent = get_user_agent(http_request)
 
-    # Check login rate limit (5/min per IP)
+    # Check login rate limit (10/min per IP)
     rate_result = await auth_rate_limiter.check_login_limit(client_ip)
     if not rate_result.allowed:
         log_auth_event(
@@ -158,7 +159,7 @@ async def login(
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many login attempts. Try again in {rate_result.retry_after} seconds.",
+            detail="Too many attempts. Please wait a moment.",
             headers={"Retry-After": str(rate_result.retry_after)},
         )
 
