@@ -21,6 +21,8 @@ COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.
 COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
 
 EXPOSE 8000
 
