@@ -1,6 +1,6 @@
 """
 Payrexx payment integration service.
-Handles webhook processing and subscription updates from payment events.
+Handles webhook processing, subscription updates, and gateway creation.
 """
 
 import json
@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,114 @@ from app.models.webhook import WebhookEvent
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Payrexx API configuration
+PAYREXX_API_BASE = "https://api.payrexx.com/v1.0"
+
+
+@dataclass
+class GatewayResponse:
+    """Response from Payrexx gateway creation."""
+
+    success: bool
+    gateway_url: str | None = None
+    gateway_id: str | None = None
+    error: str | None = None
+
+
+async def create_gateway(
+    amount: int,
+    currency: str,
+    billing_period: str,
+    user_email: str,
+    success_url: str,
+    failed_url: str,
+    cancel_url: str,
+) -> GatewayResponse:
+    """
+    Create a Payrexx payment gateway for subscription purchase.
+
+    Args:
+        amount: Amount in cents (e.g., 799 for CHF 7.99)
+        currency: Currency code (e.g., "CHF")
+        billing_period: "monthly" or "yearly"
+        user_email: User's email for prefilling and reference
+        success_url: URL to redirect after successful payment
+        failed_url: URL to redirect after failed payment
+        cancel_url: URL to redirect after cancelled payment
+
+    Returns:
+        GatewayResponse with gateway URL or error
+    """
+    if not settings.payrexx_instance or not settings.payrexx_api_secret:
+        logger.error("Payrexx credentials not configured")
+        return GatewayResponse(success=False, error="Payment system not configured")
+
+    # Build request payload
+    payload = {
+        "amount": amount,
+        "currency": currency,
+        "purpose": f"Helvetra+ {billing_period.capitalize()} Subscription",
+        "successRedirectUrl": success_url,
+        "failedRedirectUrl": failed_url,
+        "cancelRedirectUrl": cancel_url,
+        "referenceId": user_email,
+        "skipResultPage": True,
+        # Prefill email field
+        "fields[email][value]": user_email,
+        # Enable all payment methods
+        "psp": [],
+        # Subscription configuration
+        "subscriptionState": True,
+        "subscriptionInterval": "P1Y" if billing_period == "yearly" else "P1M",
+        "subscriptionPeriod": "P1Y" if billing_period == "yearly" else "P1M",
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{PAYREXX_API_BASE}/Gateway/",
+                params={"instance": settings.payrexx_instance},
+                data=payload,
+                headers={
+                    "X-API-KEY": settings.payrexx_api_secret,
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Payrexx API error: {response.status_code} - {response.text}")
+                return GatewayResponse(
+                    success=False,
+                    error=f"Payment gateway error: {response.status_code}",
+                )
+
+            data = response.json()
+
+            # Check for success
+            if data.get("status") == "success" and data.get("data"):
+                gateway_data = data["data"][0] if isinstance(data["data"], list) else data["data"]
+                gateway_url = gateway_data.get("link")
+                gateway_id = str(gateway_data.get("id", ""))
+
+                logger.info(f"Created Payrexx gateway {gateway_id} for {user_email}")
+                return GatewayResponse(
+                    success=True,
+                    gateway_url=gateway_url,
+                    gateway_id=gateway_id,
+                )
+
+            # Handle error response
+            error_msg = data.get("message", "Unknown error")
+            logger.error(f"Payrexx gateway creation failed: {error_msg}")
+            return GatewayResponse(success=False, error=error_msg)
+
+    except httpx.TimeoutException:
+        logger.error("Payrexx API timeout")
+        return GatewayResponse(success=False, error="Payment service timeout")
+    except Exception as e:
+        logger.exception(f"Payrexx gateway creation error: {e}")
+        return GatewayResponse(success=False, error="Payment service error")
 
 
 @dataclass
