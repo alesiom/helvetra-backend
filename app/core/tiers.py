@@ -32,13 +32,13 @@ class TierConfig:
 TIER_CONFIGS: dict[Tier, TierConfig] = {
     Tier.ANONYMOUS: TierConfig(
         max_chars_per_request=400,
-        period_limit=2_000,
+        period_limit=5_000,
         period_type="weekly",
         formality=True,
     ),
     Tier.FREE: TierConfig(
         max_chars_per_request=1_000,
-        period_limit=10_000,
+        period_limit=20_000,
         period_type="monthly",
         formality=True,
     ),
