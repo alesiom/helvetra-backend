@@ -13,6 +13,7 @@ SUPPORTED_LANGUAGES = [
     {"code": "fr", "name": "French", "native_name": "Français"},
     {"code": "it", "name": "Italian", "native_name": "Italiano"},
     {"code": "en", "name": "English", "native_name": "English"},
+    {"code": "rm", "name": "Romansh", "native_name": "Rumantsch"},
 ]
 
 

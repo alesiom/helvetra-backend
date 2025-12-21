@@ -26,10 +26,10 @@ class TestLanguagesEndpoint:
         data = response.json()
         assert data["success"] is True
         assert isinstance(data["data"], list)
-        assert len(data["data"]) == 5
+        assert len(data["data"]) == 6
 
     def test_get_languages_contains_required(self, client: TestClient):
-        """Response contains all v1.0 required languages."""
+        """Response contains all required languages."""
         response = client.get("/api/v1/languages")
 
         data = response.json()
@@ -40,6 +40,7 @@ class TestLanguagesEndpoint:
         assert "fr" in codes
         assert "it" in codes
         assert "en" in codes
+        assert "rm" in codes
 
     def test_get_languages_format(self, client: TestClient):
         """Each language has required fields."""
