@@ -12,7 +12,7 @@ from app.api.dependencies import get_client_ip, get_current_user_optional
 from app.core.database import get_db
 from app.core.tiers import Tier, get_tier_config
 from app.models.user import User
-from app.schemas.translate import TranslateRequest, TranslateResponse
+from app.schemas.translate import SUPPORTED_LANGUAGE_CODES, TranslateRequest, TranslateResponse
 from app.services.subscription import get_or_create_subscription
 from app.services.translation import translate_text
 from app.services.usage_tracker import anonymous_usage_tracker
@@ -41,6 +41,30 @@ async def translate(
     Translate text from source language to target language.
     Enforces per-request and period character limits based on user tier.
     """
+    # Validate language codes against supported list
+    if request.source_lang != "auto" and request.source_lang not in SUPPORTED_LANGUAGE_CODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "UNSUPPORTED_LANGUAGE",
+                "message": (
+                    f"'{request.source_lang}' is not yet supported. "
+                    "Interested in this language? Reach out to gruezi@helvetra.ch"
+                ),
+            },
+        )
+    if request.target_lang not in SUPPORTED_LANGUAGE_CODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "UNSUPPORTED_LANGUAGE",
+                "message": (
+                    f"'{request.target_lang}' is not yet supported. "
+                    "Interested in this language? Reach out to gruezi@helvetra.ch"
+                ),
+            },
+        )
+
     # Determine user tier
     subscription_tier = None
     if user:
