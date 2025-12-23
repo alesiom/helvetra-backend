@@ -132,8 +132,8 @@ class TestRateLimitMiddleware:
             called_ip = mock_check.call_args[0][0]
             assert called_ip is not None
 
-    def test_rate_limit_uses_forwarded_ip(self, client: TestClient):
-        """Rate limiter uses X-Forwarded-For header when present."""
+    def test_rate_limit_uses_real_ip(self, client: TestClient):
+        """Rate limiter uses X-Real-IP header set by nginx."""
         mock_result = RateLimitResult(
             allowed=True,
             remaining=59,
@@ -147,8 +147,8 @@ class TestRateLimitMiddleware:
         ) as mock_check:
             client.get(
                 "/api/v1/languages",
-                headers={"X-Forwarded-For": "203.0.113.50, 70.41.3.18"},
+                headers={"X-Real-IP": "203.0.113.50"},
             )
 
-            # Should use first IP from X-Forwarded-For
+            # Should use X-Real-IP set by nginx (not spoofable X-Forwarded-For)
             mock_check.assert_called_once_with("203.0.113.50")

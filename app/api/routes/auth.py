@@ -7,7 +7,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_client_ip, get_current_user
 from app.config import get_settings
 from app.core.database import get_db
 from app.models.user import RefreshToken, User
@@ -35,14 +35,6 @@ from app.services.auth_rate_limiter import auth_rate_limiter
 
 settings = get_settings()
 router = APIRouter(prefix="/auth")
-
-
-def get_client_ip(request: Request) -> str:
-    """Extract client IP from request, handling proxy headers."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def get_user_agent(request: Request) -> str | None:

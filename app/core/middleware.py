@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.dependencies import get_client_ip
 from app.services.rate_limiter import rate_limiter
 
 
@@ -26,12 +27,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in self.EXEMPT_PATHS:
             return await call_next(request)
 
-        # Get client IP (handle proxy headers)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            client_ip = forwarded.split(",")[0].strip()
-        else:
-            client_ip = request.client.host if request.client else "unknown"
+        client_ip = get_client_ip(request)
 
         # Check rate limit
         result = await rate_limiter.check_rate_limit(client_ip)

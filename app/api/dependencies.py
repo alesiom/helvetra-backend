@@ -16,10 +16,15 @@ optional_security = HTTPBearer(auto_error=False)
 
 
 def get_client_ip(request: Request) -> str:
-    """Extract client IP from request, handling proxy headers."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Extract client IP from request, using trusted proxy headers.
+
+    Uses X-Real-IP set by nginx, which cannot be spoofed by clients.
+    Falls back to direct connection IP for local development.
+    """
+    # X-Real-IP is set by nginx from the actual TCP connection
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
     return request.client.host if request.client else "unknown"
 
 
