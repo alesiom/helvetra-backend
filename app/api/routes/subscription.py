@@ -12,6 +12,8 @@ from app.core.tiers import Tier, get_tier_config
 from app.models.user import User
 from app.schemas.subscription import (
     AnonymousUsageResponse,
+    AppleVerifyRequest,
+    AppleVerifyResponse,
     SubscriptionResponse,
     TierLimitsResponse,
 )
@@ -75,4 +77,64 @@ async def get_anonymous_usage(request: Request) -> AnonymousUsageResponse:
         characters_limit=usage.characters_limit,
         characters_remaining=usage.characters_remaining,
         reset_at=usage.reset_at,
+    )
+
+
+@router.post("/apple/verify", response_model=AppleVerifyResponse)
+async def verify_apple_transaction(
+    request: AppleVerifyRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AppleVerifyResponse:
+    """
+    Verify an Apple StoreKit 2 transaction and update subscription.
+    Called by iOS app after successful in-app purchase.
+    """
+    from app.models.subscription import (
+        SubscriptionSource,
+        SubscriptionStatus,
+        SubscriptionTier,
+    )
+    from app.services.apple_storekit import verify_transaction
+
+    # Verify the signed transaction with Apple
+    transaction = await verify_transaction(request.signed_transaction)
+    if not transaction:
+        return AppleVerifyResponse(
+            success=False,
+            message="Invalid transaction signature",
+        )
+
+    # Check if transaction was already upgraded to a new subscription
+    if transaction.is_upgraded:
+        return AppleVerifyResponse(
+            success=False,
+            message="Transaction was upgraded",
+        )
+
+    # Map Apple product to tier
+    if not transaction.tier:
+        return AppleVerifyResponse(
+            success=False,
+            message="Unknown product ID",
+        )
+
+    # Update user's subscription
+    subscription = await get_or_create_subscription(db, user.id)
+
+    tier_enum = SubscriptionTier(transaction.tier)
+    subscription.tier = tier_enum
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.source = SubscriptionSource.APPLE
+    subscription.external_id = transaction.original_transaction_id
+    subscription.current_period_start = transaction.purchase_date
+    subscription.current_period_end = transaction.expires_date
+
+    await db.commit()
+
+    return AppleVerifyResponse(
+        success=True,
+        tier=transaction.tier,
+        expires_at=transaction.expires_date,
+        message="Subscription activated",
     )

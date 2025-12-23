@@ -42,3 +42,18 @@ class AnonymousUsageResponse(BaseModel):
     characters_limit: int
     characters_remaining: int
     reset_at: int
+
+
+class AppleVerifyRequest(BaseModel):
+    """Apple StoreKit transaction verification request."""
+
+    signed_transaction: str
+
+
+class AppleVerifyResponse(BaseModel):
+    """Apple StoreKit verification result."""
+
+    success: bool
+    tier: str | None = None
+    expires_at: datetime | None = None
+    message: str | None = None

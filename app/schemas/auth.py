@@ -90,3 +90,15 @@ class ResendVerificationRequest(BaseModel):
 
     email: EmailStr
     locale: str | None = Field(default=None, description="User's preferred language (en, de, fr, it)")
+
+
+class AppleSignInRequest(BaseModel):
+    """Apple Sign-In request with identity token from iOS."""
+
+    identity_token: str = Field(..., description="JWT identity token from Apple Sign-In")
+    user_name: str | None = Field(
+        default=None, description="User's name (only provided on first sign-in)"
+    )
+    use_cookie: bool = Field(
+        default=False, description="Store refresh token in HttpOnly cookie"
+    )

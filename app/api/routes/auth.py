@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.core.database import get_db
 from app.models.user import RefreshToken, User
 from app.schemas.auth import (
+    AppleSignInRequest,
     AuthResponse,
     LoginRequest,
     MessageResponse,
@@ -518,3 +519,124 @@ async def delete_account(
     response.delete_cookie(key="refresh_token", path="/api/v1/auth")
 
     return MessageResponse(success=True, message="Account deleted successfully")
+
+
+@router.post("/apple", response_model=AuthResponse)
+async def apple_sign_in(
+    request: AppleSignInRequest,
+    http_request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> AuthResponse:
+    """
+    Authenticate with Apple Sign-In.
+    Creates account on first sign-in, links to existing account if Apple ID matches.
+    """
+    from app.services.apple_auth import validate_identity_token
+
+    client_ip = get_client_ip(http_request)
+    user_agent = get_user_agent(http_request)
+
+    # Validate Apple identity token
+    apple_user = await validate_identity_token(request.identity_token)
+    if not apple_user:
+        log_auth_event(
+            AuthEvent.LOGIN_FAILED,
+            client_ip,
+            None,
+            user_agent,
+            {"reason": "invalid_apple_token"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Apple identity token",
+        )
+
+    # Check if user exists by Apple ID
+    result = await db.execute(select(User).where(User.apple_id == apple_user.apple_id))
+    user = result.scalar_one_or_none()
+
+    if not user and apple_user.email:
+        # Check if user exists by email (link accounts)
+        result = await db.execute(select(User).where(User.email == apple_user.email))
+        user = result.scalar_one_or_none()
+        if user:
+            # Link Apple ID to existing account
+            user.apple_id = apple_user.apple_id
+            if apple_user.email_verified and not user.email_verified:
+                user.email_verified = True
+
+    if not user:
+        # Create new user with Apple ID
+        email = apple_user.email or f"{apple_user.apple_id}@privaterelay.appleid.com"
+        user = User(
+            email=email,
+            apple_id=apple_user.apple_id,
+            email_verified=apple_user.email_verified,
+        )
+        db.add(user)
+        await db.flush()
+        log_auth_event(AuthEvent.REGISTER_SUCCESS, client_ip, email, user_agent)
+
+    log_auth_event(AuthEvent.LOGIN_SUCCESS, client_ip, user.email, user_agent)
+
+    # Get subscription tier
+    from app.services.subscription import get_or_create_subscription
+
+    subscription = await get_or_create_subscription(db, user.id)
+
+    # Create tokens
+    access_token = create_access_token(user.id)
+    raw_refresh, hashed_refresh = create_refresh_token()
+
+    refresh_token_obj = RefreshToken(
+        user_id=user.id,
+        token_hash=hashed_refresh,
+        expires_at=get_refresh_token_expiry(),
+    )
+    db.add(refresh_token_obj)
+
+    # Set refresh token as HttpOnly cookie if requested
+    if request.use_cookie:
+        response.set_cookie(
+            key="refresh_token",
+            value=raw_refresh,
+            httponly=True,
+            secure=not settings.debug,
+            samesite="strict",
+            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            path="/api/v1/auth",
+        )
+        return AuthResponse(
+            success=True,
+            data={
+                "user": UserResponse(
+                    id=user.id,
+                    email=user.email,
+                    email_verified=user.email_verified,
+                    tier=subscription.tier.value,
+                ).model_dump(),
+                "tokens": TokenResponse(
+                    access_token=access_token,
+                    refresh_token="",
+                    expires_in=settings.access_token_expire_minutes * 60,
+                ).model_dump(),
+            },
+        )
+
+    return AuthResponse(
+        success=True,
+        data={
+            "user": UserResponse(
+                id=user.id,
+                email=user.email,
+                email_verified=user.email_verified,
+                tier=subscription.tier.value,
+            ).model_dump(),
+            "tokens": TokenResponse(
+                access_token=access_token,
+                refresh_token=raw_refresh,
+                expires_in=settings.access_token_expire_minutes * 60,
+            ).model_dump(),
+        },
+    )

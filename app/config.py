@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     payrexx_product_pro_id: str = ""
     payrexx_product_business_id: str = ""
 
+    # Apple Sign-In and StoreKit
+    apple_bundle_id: str = "ch.helvetra.app"
+    apple_team_id: str = ""
+    apple_key_id: str = ""
+    apple_private_key: str = ""  # Contents of .p8 file
+    apple_app_store_environment: str = "sandbox"  # sandbox or production
+
     # Email (SMTP)
     smtp_host: str = "mail.infomaniak.com"
     smtp_port: int = 587
