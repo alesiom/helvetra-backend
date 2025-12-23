@@ -142,6 +142,19 @@ async def translate(
                 "processing_time_ms": result.processing_time_ms,
             },
         )
+    except ValueError as e:
+        if "suspiciously long" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "SUSPICIOUS_OUTPUT",
+                    "message": (
+                        "Translation rejected due to suspicious output. "
+                        "Please provide text to translate, not instructions."
+                    ),
+                },
+            )
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.exception(f"Translation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
