@@ -29,6 +29,7 @@ class AuthEvent(str, Enum):
     LOGOUT = "logout"
     TOKEN_REFRESH = "token_refresh"
     ACCOUNT_LOCKED = "account_locked"
+    ACCOUNT_DELETED = "account_deleted"
     RATE_LIMITED = "rate_limited"
 
 

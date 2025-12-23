@@ -471,3 +471,50 @@ async def resend_verification(
     await send_verification_email(db, user, request.locale)
 
     return MessageResponse(success=True, message="Verification email sent")
+
+
+@router.delete("/account", response_model=MessageResponse)
+async def delete_account(
+    http_request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """
+    Delete user account and all associated data.
+    Cancels any active subscription before deletion.
+    """
+    from app.models.subscription import SubscriptionSource, SubscriptionStatus
+    from app.services.payrexx import cancel_subscription
+
+    client_ip = get_client_ip(http_request)
+    user_agent = get_user_agent(http_request)
+
+    # Get user's subscription to check for active payment subscription
+    from app.services.subscription import get_or_create_subscription
+
+    subscription = await get_or_create_subscription(db, current_user.id)
+
+    # Cancel Payrexx subscription if active
+    if (
+        subscription.source == SubscriptionSource.PAYREXX
+        and subscription.status == SubscriptionStatus.ACTIVE
+        and subscription.external_id
+    ):
+        await cancel_subscription(subscription.external_id)
+
+    # Log the deletion event before deleting
+    log_auth_event(
+        AuthEvent.ACCOUNT_DELETED,
+        client_ip,
+        current_user.email,
+        user_agent,
+    )
+
+    # Delete user (cascades to all related data)
+    await db.delete(current_user)
+
+    # Clear any refresh token cookie
+    response.delete_cookie(key="refresh_token", path="/api/v1/auth")
+
+    return MessageResponse(success=True, message="Account deleted successfully")

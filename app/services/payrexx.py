@@ -427,6 +427,41 @@ async def handle_subscription_event(
         return True
 
 
+async def cancel_subscription(external_id: str) -> bool:
+    """
+    Cancel a Payrexx subscription via API.
+    Returns True if cancelled successfully, False otherwise.
+    """
+    if not settings.payrexx_instance or not settings.payrexx_api_secret:
+        logger.error("Payrexx credentials not configured")
+        return False
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{PAYREXX_API_BASE}/Subscription/{external_id}/",
+                params={"instance": settings.payrexx_instance},
+                headers={"X-API-KEY": settings.payrexx_api_secret},
+                timeout=30.0,
+            )
+
+            if response.status_code in (200, 204):
+                logger.info(f"Cancelled Payrexx subscription {external_id}")
+                return True
+
+            logger.warning(
+                f"Payrexx cancellation returned {response.status_code}: {response.text}"
+            )
+            return False
+
+    except httpx.TimeoutException:
+        logger.error(f"Payrexx API timeout cancelling subscription {external_id}")
+        return False
+    except Exception as e:
+        logger.exception(f"Error cancelling Payrexx subscription {external_id}: {e}")
+        return False
+
+
 async def process_webhook(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
     """
     Process Payrexx webhook event.
