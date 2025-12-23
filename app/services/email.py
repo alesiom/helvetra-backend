@@ -15,9 +15,16 @@ settings = get_settings()
 
 # Brand colors matching frontend tailwind.config.ts
 SWISS_RED = "#DA291C"
+SWISS_RED_LIGHT = "#E84C41"  # Lighter red for dark mode visibility
 NEUTRAL_700 = "#404040"
 NEUTRAL_500 = "#737373"
 NEUTRAL_200 = "#E5E5E5"
+NEUTRAL_100 = "#F5F5F5"
+
+# Dark mode colors
+DARK_BG = "#1a1a1a"
+DARK_TEXT = "#E5E5E5"
+DARK_TEXT_MUTED = "#A3A3A3"
 
 # Supported locales (excluding gsw - uses de for emails)
 SUPPORTED_LOCALES = ("en", "de", "fr", "it")
@@ -199,42 +206,74 @@ class EmailService:
         expires: str,
         ignore: str,
     ) -> str:
-        """Build the standard HTML email template."""
+        """Build the standard HTML email template with dark mode support."""
         return f"""
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <style>
+        :root {{
+            color-scheme: light dark;
+            supported-color-schemes: light dark;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            .email-body {{
+                background-color: {DARK_BG} !important;
+                color: {DARK_TEXT} !important;
+            }}
+            .email-text {{
+                color: {DARK_TEXT} !important;
+            }}
+            .email-muted {{
+                color: {DARK_TEXT_MUTED} !important;
+            }}
+            .email-link {{
+                color: {SWISS_RED_LIGHT} !important;
+            }}
+            .email-button {{
+                background-color: {SWISS_RED_LIGHT} !important;
+            }}
+            .email-divider {{
+                border-top-color: #404040 !important;
+            }}
+            .email-logo {{
+                filter: brightness(0) invert(1);
+            }}
+        }}
+    </style>
 </head>
-<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: {NEUTRAL_700}; max-width: 600px; margin: 0 auto; padding: 20px; -webkit-font-smoothing: antialiased;">
+<body class="email-body" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: {NEUTRAL_700}; background-color: #ffffff; max-width: 600px; margin: 0 auto; padding: 20px; -webkit-font-smoothing: antialiased;">
     <div style="text-align: center; margin-bottom: 30px;">
-        <img src="https://helvetra.ch/img/logo.png" alt="Helvetra" width="130" height="32" style="display: block; margin: 0 auto;">
+        <img class="email-logo" src="https://helvetra.ch/img/logo.png" alt="Helvetra" width="130" height="32" style="display: block; margin: 0 auto;">
     </div>
 
-    <p>{welcome_or_intro}</p>
+    <p class="email-text">{welcome_or_intro}</p>
 
-    <p>{body}</p>
+    <p class="email-text">{body}</p>
 
     <div style="text-align: center; margin: 30px 0;">
-        <a href="{button_url}"
+        <a href="{button_url}" class="email-button"
            style="background-color: {SWISS_RED}; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">
             {button_text}
         </a>
     </div>
 
-    <p style="color: {NEUTRAL_500}; font-size: 14px;">
+    <p class="email-muted" style="color: {NEUTRAL_500}; font-size: 14px;">
         {link_text}<br>
-        <a href="{button_url}" style="color: {SWISS_RED};">{button_url}</a>
+        <a href="{button_url}" class="email-link" style="color: {SWISS_RED};">{button_url}</a>
     </p>
 
-    <p style="color: {NEUTRAL_500}; font-size: 14px;">
+    <p class="email-muted" style="color: {NEUTRAL_500}; font-size: 14px;">
         {expires}
     </p>
 
-    <hr style="border: none; border-top: 1px solid {NEUTRAL_200}; margin: 30px 0;">
+    <hr class="email-divider" style="border: none; border-top: 1px solid {NEUTRAL_200}; margin: 30px 0;">
 
-    <p style="color: {NEUTRAL_500}; font-size: 12px;">
+    <p class="email-muted" style="color: {NEUTRAL_500}; font-size: 12px;">
         {ignore}
     </p>
 </body>
