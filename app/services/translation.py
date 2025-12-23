@@ -5,6 +5,7 @@ Handles communication with the translation API and response validation.
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -119,18 +120,41 @@ def _parse_auto_detect_response(content: str) -> tuple[str, str]:
     """
     Parse JSON response from auto-detect mode.
     Returns (translation, detected_lang).
+    Handles malformed JSON from LLM (unescaped newlines, markdown blocks).
     """
+    # Strip markdown code blocks if present
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        # Remove first line (```json) and last line (```)
+        lines = [line for line in lines[1:] if line.strip() != "```"]
+        cleaned = "\n".join(lines)
+
+    # Try standard JSON parsing first
     try:
-        result = json.loads(content)
+        result = json.loads(cleaned)
         translation = result.get("translation", "")
         detected_lang = result.get("detected_lang", "")
-        if not translation or not detected_lang:
-            raise ValueError("Missing required fields in JSON response")
+        if translation and detected_lang:
+            return translation, detected_lang
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: extract fields using regex for malformed JSON
+    # Extract translation field (handles multiline content)
+    trans_match = re.search(r'"translation"\s*:\s*"(.*?)"(?=\s*,|\s*})', cleaned, re.DOTALL)
+    lang_match = re.search(r'"detected_lang"\s*:\s*"(\w+)"', cleaned)
+
+    if trans_match and lang_match:
+        translation = trans_match.group(1)
+        # Unescape common JSON escapes
+        translation = translation.replace("\\n", "\n").replace('\\"', '"')
+        detected_lang = lang_match.group(1)
         return translation, detected_lang
-    except json.JSONDecodeError as e:
-        logger.warning(f"Failed to parse auto-detect JSON response: {e}")
-        # Fallback: return the content as-is, assume German
-        return content, "de"
+
+    logger.warning(f"Failed to parse auto-detect response: {content[:100]}...")
+    # Last resort: return content as-is, assume German
+    return content, "de"
 
 
 async def translate_text(
