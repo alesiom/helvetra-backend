@@ -4,7 +4,7 @@ Tracks character usage by IP address with weekly limits for anonymous users.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as redis
 
@@ -67,13 +67,12 @@ class AnonymousUsageTracker:
         current = await self.client.get(redis_key)
         current_usage = int(current or 0)
 
-        # Calculate reset time (end of current ISO week)
+        # Calculate reset time (next Monday 00:00 UTC)
         now = datetime.now(timezone.utc)
         days_until_monday = (7 - now.weekday()) % 7 or 7
         next_monday = now.replace(
             hour=0, minute=0, second=0, microsecond=0
-        )
-        next_monday = next_monday.replace(day=now.day + days_until_monday)
+        ) + timedelta(days=days_until_monday)
         reset_at = int(next_monday.timestamp())
 
         # Check if adding these characters would exceed limit
@@ -112,13 +111,12 @@ class AnonymousUsageTracker:
         current = await self.client.get(redis_key)
         current_usage = int(current or 0)
 
-        # Calculate reset time
+        # Calculate reset time (next Monday 00:00 UTC)
         now = datetime.now(timezone.utc)
         days_until_monday = (7 - now.weekday()) % 7 or 7
         next_monday = now.replace(
             hour=0, minute=0, second=0, microsecond=0
-        )
-        next_monday = next_monday.replace(day=now.day + days_until_monday)
+        ) + timedelta(days=days_until_monday)
         reset_at = int(next_monday.timestamp())
 
         return UsageResult(
