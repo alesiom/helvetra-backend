@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import get_settings
+from app.services.language_detection import validate_llm_detection
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +230,10 @@ async def translate_text(
     detected_source_lang = None
     if is_auto_detect:
         translation, detected_source_lang = _parse_auto_detect_response(raw_content)
+        # Validate LLM detection - catches cases where LLM returns target language
+        detected_source_lang = validate_llm_detection(
+            text, detected_source_lang, target_lang
+        )
     else:
         translation = raw_content
 
