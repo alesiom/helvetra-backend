@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.tiers import Tier, get_tier_config
 from app.models.user import User
 from app.schemas.translate import SUPPORTED_LANGUAGE_CODES, TranslateRequest, TranslateResponse
+from app.services.apple_storekit import verify_transaction
 from app.services.subscription import get_or_create_subscription
 from app.services.translation import translate_text
 from app.services.usage_tracker import anonymous_usage_tracker
@@ -21,12 +22,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def get_storekit_tier(request: Request) -> str | None:
+    """Check if request has a valid StoreKit subscription and return tier."""
+    jws = request.headers.get("X-StoreKit-JWS")
+    if not jws:
+        return None
+
+    try:
+        from datetime import datetime, timezone
+
+        transaction = await verify_transaction(jws)
+        if transaction and transaction.tier:
+            # Check if subscription is still valid
+            if transaction.expires_date:
+                now = datetime.now(timezone.utc)
+                if transaction.expires_date > now:
+                    logger.info(f"StoreKit subscription valid: {transaction.product_id}")
+                    return transaction.tier
+            else:
+                # Non-expiring product - assume valid
+                return transaction.tier
+        return None
+    except Exception as e:
+        logger.warning(f"StoreKit verification failed in translate: {e}")
+        return None
+
+
 def get_user_tier(user: User | None, subscription_tier: str | None) -> Tier:
     """Determine the effective tier for a request."""
-    if user is None:
-        return Tier.ANONYMOUS
+    # If we have a subscription tier (from DB or StoreKit), use it
     if subscription_tier:
         return Tier(subscription_tier)
+    # Anonymous user with no subscription
+    if user is None:
+        return Tier.ANONYMOUS
+    # Authenticated user with no subscription
     return Tier.FREE
 
 
@@ -67,9 +97,16 @@ async def translate(
 
     # Determine user tier
     subscription_tier = None
+    storekit_tier = None
+
     if user:
         subscription = await get_or_create_subscription(db, user.id)
         subscription_tier = subscription.tier.value
+    else:
+        # For anonymous users, check for StoreKit subscription
+        storekit_tier = await get_storekit_tier(http_request)
+        if storekit_tier:
+            subscription_tier = storekit_tier
 
     tier = get_user_tier(user, subscription_tier)
     config = get_tier_config(tier)
