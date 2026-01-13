@@ -48,14 +48,17 @@ async def get_storekit_tier(request: Request) -> str | None:
         return None
 
 
-def get_user_tier(user: User | None, subscription_tier: str | None) -> Tier:
+def get_user_tier(
+    user: User | None, subscription_tier: str | None, is_ios_client: bool = False
+) -> Tier:
     """Determine the effective tier for a request."""
     # If we have a subscription tier (from DB or StoreKit), use it
     if subscription_tier:
         return Tier(subscription_tier)
     # Anonymous user with no subscription
     if user is None:
-        return Tier.ANONYMOUS
+        # iOS app users get FREE tier limits (20k/month) instead of ANONYMOUS (5k/week)
+        return Tier.FREE if is_ios_client else Tier.ANONYMOUS
     # Authenticated user with no subscription
     return Tier.FREE
 
@@ -95,6 +98,9 @@ async def translate(
             },
         )
 
+    # Check if request is from iOS app
+    is_ios_client = http_request.headers.get("X-Client") == "helvetra-ios"
+
     # Determine user tier
     subscription_tier = None
     storekit_tier = None
@@ -108,7 +114,7 @@ async def translate(
         if storekit_tier:
             subscription_tier = storekit_tier
 
-    tier = get_user_tier(user, subscription_tier)
+    tier = get_user_tier(user, subscription_tier, is_ios_client)
     config = get_tier_config(tier)
     text_length = len(request.text)
 
