@@ -14,7 +14,7 @@ from app.core.tiers import Tier, get_tier_config
 from app.models.user import User
 from app.schemas.translate import SUPPORTED_LANGUAGE_CODES, TranslateRequest, TranslateResponse
 from app.services.apple_storekit import verify_transaction
-from app.services.subscription import get_or_create_subscription
+from app.services.subscription import get_or_create_subscription, record_usage
 from app.services.translation import translate_text
 from app.services.usage_tracker import anonymous_usage_tracker
 
@@ -176,6 +176,11 @@ async def translate(
         # Include detected_source_lang when auto-detection was used
         if result.detected_source_lang:
             response_data["detected_source_lang"] = result.detected_source_lang
+
+        # Record usage for authenticated users
+        if user:
+            await record_usage(db, user.id, text_length)
+            await db.commit()
 
         return TranslateResponse(
             success=True,

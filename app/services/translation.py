@@ -225,6 +225,7 @@ async def translate_text(
         logger.info(f"Prompt cache hit: {cached_tokens}/{prompt_tokens} tokens cached")
 
     raw_content = data["choices"][0]["message"]["content"].strip()
+    logger.info(f"Raw API response length: {len(raw_content)}")
 
     # Parse response based on mode
     detected_source_lang = None
@@ -238,7 +239,12 @@ async def translate_text(
         translation = raw_content
 
     # Validate output length ratio to detect potential prompt injection
-    if len(translation) > len(text) * 3:
+    input_len = len(text)
+    output_len = len(translation)
+    ratio = output_len / input_len if input_len > 0 else 0
+    logger.info(f"Translation lengths: input={input_len}, output={output_len}, ratio={ratio:.2f}")
+    if output_len > input_len * 3:
+        logger.warning(f"Suspicious output detected. First 200 chars: {translation[:200]}")
         raise ValueError("Translation output suspiciously long")
 
     processing_time_ms = int((time.time() - start_time) * 1000)
