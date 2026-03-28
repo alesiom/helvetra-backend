@@ -21,6 +21,7 @@ from app.models.subscription import (
     SubscriptionTier,
 )
 from app.models.webhook import WebhookEvent
+from app.services.subscription import sync_usage_period_limit
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -312,12 +313,16 @@ async def handle_payment_confirmed(
     period_end = period_start + timedelta(days=30)
 
     # Update subscription
+    old_tier = subscription.tier
     subscription.tier = tier
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.source = SubscriptionSource.PAYREXX
     subscription.external_id = transaction.subscription_id or transaction.id
     subscription.current_period_start = period_start
     subscription.current_period_end = period_end
+
+    if old_tier != tier:
+        await sync_usage_period_limit(db, subscription.user_id, tier)
 
     logger.info(f"Activated {tier.value} subscription for user {subscription.user_id}")
     return True
@@ -369,12 +374,17 @@ async def handle_refund(
         logger.warning(f"No subscription found for refund {transaction.id}")
         return False
 
+    old_tier = subscription.tier
     subscription.tier = SubscriptionTier.FREE
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.source = None
     subscription.external_id = None
     subscription.current_period_start = None
     subscription.current_period_end = None
+
+    if old_tier != SubscriptionTier.FREE:
+        await sync_usage_period_limit(db, subscription.user_id, SubscriptionTier.FREE)
+
     logger.info(f"Refunded subscription {subscription.id}, downgraded to free")
     return True
 
@@ -394,10 +404,14 @@ async def handle_subscription_event(
 
     if sub_event.status == "active":
         # Activate subscription
+        old_tier = subscription.tier
         subscription.tier = SubscriptionTier.PRO
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.source = SubscriptionSource.PAYREXX
         subscription.external_id = str(sub_event.id)
+
+        if old_tier != SubscriptionTier.PRO:
+            await sync_usage_period_limit(db, subscription.user_id, SubscriptionTier.PRO)
 
         # Set period dates from Payrexx data
         if sub_event.start:

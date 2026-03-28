@@ -75,6 +75,7 @@ async def apple_webhook(
         SubscriptionTier,
     )
     from app.services.apple_storekit import parse_server_notification
+    from app.services.subscription import sync_usage_period_limit
 
     try:
         payload = await request.json()
@@ -111,17 +112,25 @@ async def apple_webhook(
 
     # Update subscription based on status
     if status_update.status == "active":
+        old_tier = subscription.tier
         if status_update.tier:
             subscription.tier = SubscriptionTier(status_update.tier)
         subscription.status = SubscriptionStatus.ACTIVE
         if status_update.expires_date:
             subscription.current_period_end = status_update.expires_date
 
+        if old_tier != subscription.tier:
+            await sync_usage_period_limit(db, subscription.user_id, subscription.tier)
+
     elif status_update.status == "expired":
+        old_tier = subscription.tier
         subscription.tier = SubscriptionTier.FREE
         subscription.status = SubscriptionStatus.EXPIRED
         subscription.source = None
         subscription.external_id = None
+
+        if old_tier != SubscriptionTier.FREE:
+            await sync_usage_period_limit(db, subscription.user_id, SubscriptionTier.FREE)
 
     elif status_update.status == "in_billing_retry":
         subscription.status = SubscriptionStatus.PAST_DUE

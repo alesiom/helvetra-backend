@@ -200,6 +200,17 @@ async def add_credits(
     return balance.balance
 
 
+async def sync_usage_period_limit(
+    db: AsyncSession, user_id: uuid.UUID, tier: SubscriptionTier
+) -> None:
+    """Update the current usage period's character limit to match the subscription tier."""
+    period = await get_current_usage_period(db, user_id)
+    if period:
+        tier_key = Tier(tier.value)
+        config = get_tier_config(tier_key)
+        period.characters_limit = config.period_limit
+
+
 async def update_subscription_tier(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -221,13 +232,8 @@ async def update_subscription_tier(
     subscription.current_period_start = period_start
     subscription.current_period_end = period_end
 
-    # Update current usage period limit if tier changed
     if old_tier != tier:
-        period = await get_current_usage_period(db, user_id)
-        if period:
-            tier_key = Tier(tier.value)
-            config = get_tier_config(tier_key)
-            period.characters_limit = config.period_limit
+        await sync_usage_period_limit(db, user_id, tier)
 
     await db.flush()
     return subscription
