@@ -95,7 +95,7 @@ async def create_checkout_session(
             success_url=SUCCESS_URL,
             cancel_url=CANCEL_URL,
             customer_update={"address": "auto"},
-            payment_method_types=["card", "twint"],
+            payment_method_types=["card"],
         )
 
         logger.info(f"Created Stripe checkout session {session.id} for user {user.id}")
@@ -106,8 +106,8 @@ async def create_checkout_session(
         return CheckoutResponse(success=False, error="Payment service error")
 
 
-def verify_webhook_signature(payload: bytes, sig_header: str) -> dict[str, Any] | None:
-    """Verify Stripe webhook signature and return the event payload."""
+def verify_webhook_signature(payload: bytes, sig_header: str) -> stripe.Event | None:
+    """Verify Stripe webhook signature and return the event object."""
     try:
         event = stripe.Webhook.construct_event(
             payload, sig_header, settings.stripe_webhook_secret
@@ -122,12 +122,12 @@ def verify_webhook_signature(payload: bytes, sig_header: str) -> dict[str, Any] 
 
 
 async def _handle_checkout_completed(
-    db: AsyncSession, event_data: dict[str, Any]
+    db: AsyncSession, event_data: Any
 ) -> bool:
     """Activate PRO subscription after successful checkout."""
-    session = event_data["object"]
-    customer_id = session.get("customer")
-    stripe_sub_id = session.get("subscription")
+    session = event_data.object
+    customer_id = session.customer
+    stripe_sub_id = session.subscription
 
     if not customer_id:
         logger.warning("No customer ID in checkout session")
@@ -148,6 +148,7 @@ async def _handle_checkout_completed(
     # Retrieve subscription details from Stripe for period dates
     stripe.api_key = settings.stripe_secret_key
     stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+    sub_item = stripe_sub.items.data[0]
 
     old_tier = subscription.tier
     subscription.tier = SubscriptionTier.PRO
@@ -155,10 +156,10 @@ async def _handle_checkout_completed(
     subscription.source = SubscriptionSource.STRIPE
     subscription.external_id = stripe_sub_id
     subscription.current_period_start = datetime.fromtimestamp(
-        stripe_sub.current_period_start, tz=timezone.utc
+        sub_item.current_period_start, tz=timezone.utc
     )
     subscription.current_period_end = datetime.fromtimestamp(
-        stripe_sub.current_period_end, tz=timezone.utc
+        sub_item.current_period_end, tz=timezone.utc
     )
 
     if old_tier != SubscriptionTier.PRO:
@@ -169,11 +170,11 @@ async def _handle_checkout_completed(
 
 
 async def _handle_invoice_payment_succeeded(
-    db: AsyncSession, event_data: dict[str, Any]
+    db: AsyncSession, event_data: Any
 ) -> bool:
     """Renew subscription on successful invoice payment."""
-    invoice = event_data["object"]
-    stripe_sub_id = invoice.get("subscription")
+    invoice = event_data.object
+    stripe_sub_id = invoice.subscription
 
     if not stripe_sub_id:
         return True  # One-off invoice, not subscription-related
@@ -194,13 +195,14 @@ async def _handle_invoice_payment_succeeded(
     # Update period dates from the Stripe subscription
     stripe.api_key = settings.stripe_secret_key
     stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+    sub_item = stripe_sub.items.data[0]
 
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.current_period_start = datetime.fromtimestamp(
-        stripe_sub.current_period_start, tz=timezone.utc
+        sub_item.current_period_start, tz=timezone.utc
     )
     subscription.current_period_end = datetime.fromtimestamp(
-        stripe_sub.current_period_end, tz=timezone.utc
+        sub_item.current_period_end, tz=timezone.utc
     )
 
     logger.info(f"Renewed subscription {subscription.id} via Stripe invoice")
@@ -208,11 +210,11 @@ async def _handle_invoice_payment_succeeded(
 
 
 async def _handle_invoice_payment_failed(
-    db: AsyncSession, event_data: dict[str, Any]
+    db: AsyncSession, event_data: Any
 ) -> bool:
     """Mark subscription as past due on failed payment."""
-    invoice = event_data["object"]
-    stripe_sub_id = invoice.get("subscription")
+    invoice = event_data.object
+    stripe_sub_id = invoice.subscription
 
     if not stripe_sub_id:
         return True
@@ -235,11 +237,11 @@ async def _handle_invoice_payment_failed(
 
 
 async def _handle_subscription_deleted(
-    db: AsyncSession, event_data: dict[str, Any]
+    db: AsyncSession, event_data: Any
 ) -> bool:
     """Downgrade to FREE tier when Stripe subscription is cancelled/deleted."""
-    stripe_sub = event_data["object"]
-    stripe_sub_id = stripe_sub.get("id")
+    stripe_sub = event_data.object
+    stripe_sub_id = stripe_sub.id
 
     result = await db.execute(
         select(Subscription).where(
@@ -268,11 +270,11 @@ async def _handle_subscription_deleted(
     return True
 
 
-async def process_webhook(db: AsyncSession, event: dict[str, Any]) -> dict[str, Any]:
+async def process_webhook(db: AsyncSession, event: Any) -> dict[str, Any]:
     """Route Stripe webhook events to the appropriate handler."""
-    event_id = event.get("id", "")
-    event_type = event.get("type", "")
-    event_data = event.get("data", {})
+    event_id = event.id
+    event_type = event.type
+    event_data = event.data
 
     if not event_id:
         return {"success": False, "error": "Missing event ID"}
@@ -283,9 +285,10 @@ async def process_webhook(db: AsyncSession, event: dict[str, Any]) -> dict[str, 
         logger.info(f"Duplicate Stripe webhook event: {event_id}")
         return {"success": True, "message": "Already processed"}
 
-    # Record event for audit
+    # Record event for audit (convert Stripe object to dict for JSON storage)
+    payload_dict = event_data.object.to_dict() if event_data else {}
     webhook_event = existing or await record_webhook_event(
-        db, "stripe", event_id, event_type, event_data
+        db, "stripe", event_id, event_type, payload_dict
     )
 
     try:

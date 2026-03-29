@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Add 'stripe' value to subscriptionsource enum
-    op.execute("ALTER TYPE subscriptionsource ADD VALUE IF NOT EXISTS 'stripe'")
+    op.execute("ALTER TYPE subscriptionsource ADD VALUE IF NOT EXISTS 'STRIPE'")
 
     # Add stripe_customer_id column to users table
     op.add_column('users', sa.Column('stripe_customer_id', sa.String(255), nullable=True))

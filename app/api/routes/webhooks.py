@@ -77,7 +77,7 @@ async def stripe_webhook(
     if event is None:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    event_type = event.get("type", "unknown")
+    event_type = event.type
     logger.info(f"Received Stripe webhook: {event_type}")
 
     result = await process_stripe_webhook(db, event)
