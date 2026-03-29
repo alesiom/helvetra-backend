@@ -1,28 +1,18 @@
 """
 Payment endpoints.
-Handles payment gateway creation for subscription purchases.
+Handles checkout session creation for subscription purchases.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.core.database import get_db
 from app.models.user import User
-from app.services.payrexx import create_gateway
+from app.services.stripe_service import create_checkout_session
 
 router = APIRouter(prefix="/payments")
-
-# Subscription pricing in cents
-PRICES = {
-    "monthly": 799,   # CHF 7.99
-    "yearly": 5988,   # CHF 59.88 (CHF 4.99/month)
-}
-
-# Redirect URLs
-BASE_URL = "https://helvetra.ch"
-SUCCESS_URL = f"{BASE_URL}/pricing/success"
-FAILED_URL = f"{BASE_URL}/pricing/cancel"
-CANCEL_URL = f"{BASE_URL}/pricing/cancel"
 
 
 class CreateGatewayRequest(BaseModel):
@@ -43,28 +33,19 @@ class CreateGatewayResponse(BaseModel):
 async def create_payment_gateway(
     request: CreateGatewayRequest,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> CreateGatewayResponse:
-    """
-    Create a Payrexx payment gateway for subscription purchase.
-
-    Requires authentication. Returns a gateway URL for the user to complete payment.
-    """
-    if request.billing_period not in PRICES:
+    """Create a Stripe Checkout Session for subscription purchase."""
+    if request.billing_period not in ("monthly", "yearly"):
         raise HTTPException(
             status_code=400,
             detail="Invalid billing period. Must be 'monthly' or 'yearly'.",
         )
 
-    amount = PRICES[request.billing_period]
-
-    result = await create_gateway(
-        amount=amount,
-        currency="CHF",
+    result = await create_checkout_session(
+        db=db,
+        user=user,
         billing_period=request.billing_period,
-        user_email=user.email,
-        success_url=SUCCESS_URL,
-        failed_url=FAILED_URL,
-        cancel_url=CANCEL_URL,
     )
 
     if not result.success:

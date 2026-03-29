@@ -1,6 +1,6 @@
 """
 Webhook endpoints for payment providers.
-Handles incoming webhooks from Payrexx and other payment services.
+Handles incoming webhooks from Stripe, Payrexx, and Apple.
 """
 
 import logging
@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.payrexx import process_webhook
+from app.services.payrexx import process_webhook as process_payrexx_webhook
+from app.services.stripe_service import process_webhook as process_stripe_webhook
+from app.services.stripe_service import verify_webhook_signature
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +41,49 @@ async def payrexx_webhook(
     status = payload.get("transaction", {}).get("status", "unknown")
     logger.info(f"Received Payrexx webhook: {status}")
 
-    result = await process_webhook(db, payload)
+    result = await process_payrexx_webhook(db, payload)
 
     if not result["success"]:
         logger.error(f"Webhook processing failed: {result.get('error')}")
         # Return 200 to prevent Payrexx from retrying (we've logged the error)
         # The webhook event is stored for manual review
+
+    await db.commit()
+
+    return {"status": "ok"}
+
+
+@router.post("/stripe")
+async def stripe_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """
+    Handle Stripe payment webhooks.
+
+    Stripe sends event notifications for:
+    - checkout.session.completed: Successful checkout
+    - invoice.payment_succeeded: Subscription renewed
+    - invoice.payment_failed: Payment failed
+    - customer.subscription.deleted: Subscription cancelled
+    """
+    body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    event = verify_webhook_signature(body, sig_header)
+    if event is None:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    event_type = event.get("type", "unknown")
+    logger.info(f"Received Stripe webhook: {event_type}")
+
+    result = await process_stripe_webhook(db, event)
+
+    if not result["success"]:
+        logger.error(f"Stripe webhook processing failed: {result.get('error')}")
 
     await db.commit()
 

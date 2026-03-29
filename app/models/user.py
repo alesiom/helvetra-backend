@@ -22,6 +22,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     apple_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -39,6 +40,7 @@ class User(Base):
     __table_args__ = (
         Index("ix_users_email", "email"),
         Index("ix_users_apple_id", "apple_id"),
+        Index("ix_users_stripe_customer_id", "stripe_customer_id"),
     )
 
 

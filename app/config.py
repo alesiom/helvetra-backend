@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     payrexx_product_pro_id: str = ""
     payrexx_product_business_id: str = ""
 
+    # Stripe (payments)
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_monthly_id: str = ""
+    stripe_price_yearly_id: str = ""
+
     # Apple Sign-In and StoreKit
     apple_bundle_id: str = "ch.helvetra.app"
     apple_team_id: str = ""

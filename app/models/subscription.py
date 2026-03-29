@@ -36,6 +36,7 @@ class SubscriptionSource(str, enum.Enum):
 
     PAYREXX = "payrexx"
     APPLE = "apple"
+    STRIPE = "stripe"
 
 
 class Subscription(Base):
