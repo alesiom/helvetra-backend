@@ -13,6 +13,7 @@ from app.api.routes import (
     health,
     languages,
     payments,
+    public,
     subscription,
     translate,
     webhooks,
@@ -49,3 +50,6 @@ app.include_router(subscription.router, prefix="/api/v1", tags=["Subscription"])
 app.include_router(payments.router, prefix="/api/v1", tags=["Payments"])
 app.include_router(api_keys.router, prefix="/api/v1", tags=["API Keys"])
 app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
+
+# B2B Public API — separate prefix, API key auth
+app.include_router(public.router, prefix="/api/public/v1", tags=["Public API"])
