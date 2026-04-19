@@ -18,25 +18,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create subscriptionproduct enum type
-    op.execute("CREATE TYPE subscriptionproduct AS ENUM ('consumer', 'b2b')")
+    # Create subscriptionproduct enum type (uppercase to match SQLAlchemy convention)
+    op.execute("CREATE TYPE subscriptionproduct AS ENUM ('CONSUMER', 'B2B')")
 
-    # Add 'starter' value to subscriptiontier enum
-    op.execute("ALTER TYPE subscriptiontier ADD VALUE IF NOT EXISTS 'starter'")
+    # Add 'STARTER' value to subscriptiontier enum
+    op.execute("ALTER TYPE subscriptiontier ADD VALUE IF NOT EXISTS 'STARTER'")
 
-    # Add product column with default 'consumer'
+    # Add product column with default 'CONSUMER'
     op.add_column(
         'subscriptions',
         sa.Column(
             'product',
-            sa.Enum('consumer', 'b2b', name='subscriptionproduct'),
+            sa.Enum('CONSUMER', 'B2B', name='subscriptionproduct'),
             nullable=False,
-            server_default='consumer',
+            server_default='CONSUMER',
         ),
     )
 
-    # Backfill all existing subscriptions as consumer
-    op.execute("UPDATE subscriptions SET product = 'consumer' WHERE product IS NULL")
+    # Backfill all existing subscriptions as CONSUMER
+    op.execute("UPDATE subscriptions SET product = 'CONSUMER' WHERE product IS NULL")
 
     # Add unique index on (user_id, product) to enforce one subscription per product per user
     op.create_index(
