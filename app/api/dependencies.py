@@ -1,13 +1,15 @@
 """
 API dependencies for route injection.
+Provides JWT auth for consumer API and API key auth for the B2B public API.
 """
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.models.api_key import ApiKey
 from app.models.user import User
 from app.services.auth import decode_access_token
 
@@ -54,6 +56,31 @@ async def get_current_user(
         )
 
     return user
+
+
+async def get_current_user_from_api_key(
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[User, ApiKey]:
+    """Authenticate via X-API-Key header for the B2B public API."""
+    from app.services.api_key import resolve_api_key
+
+    api_key = await resolve_api_key(db, x_api_key)
+    if api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or revoked API key",
+        )
+
+    result = await db.execute(select(User).where(User.id == api_key.user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key owner not found",
+        )
+
+    return user, api_key
 
 
 async def get_current_user_optional(

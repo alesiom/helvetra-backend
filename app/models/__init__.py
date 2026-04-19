@@ -2,6 +2,7 @@
 Database models.
 """
 
+from app.models.api_key import ApiKey
 from app.models.feedback import Feedback
 from app.models.subscription import (
     Subscription,
@@ -13,6 +14,7 @@ from app.models.subscription import (
 from app.models.user import RefreshToken, User
 
 __all__ = [
+    "ApiKey",
     "Feedback",
     "RefreshToken",
     "Subscription",
