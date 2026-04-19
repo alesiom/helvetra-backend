@@ -14,11 +14,19 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
+class SubscriptionProduct(str, enum.Enum):
+    """Product line for the subscription."""
+
+    CONSUMER = "consumer"
+    B2B = "b2b"
+
+
 class SubscriptionTier(str, enum.Enum):
     """Available subscription tiers."""
 
     FREE = "free"
     PRO = "pro"
+    STARTER = "starter"
     BUSINESS = "business"
 
 
@@ -48,6 +56,9 @@ class Subscription(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    product: Mapped[SubscriptionProduct] = mapped_column(
+        Enum(SubscriptionProduct), default=SubscriptionProduct.CONSUMER
+    )
     tier: Mapped[SubscriptionTier] = mapped_column(
         Enum(SubscriptionTier), default=SubscriptionTier.FREE
     )
@@ -70,10 +81,11 @@ class Subscription(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship(back_populates="subscription")
+    user: Mapped["User"] = relationship(back_populates="subscriptions")
 
     __table_args__ = (
         Index("ix_subscriptions_user_id", "user_id"),
+        Index("ix_subscriptions_user_product", "user_id", "product", unique=True),
         Index("ix_subscriptions_external_id", "external_id"),
     )
 

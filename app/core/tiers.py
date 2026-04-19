@@ -13,6 +13,7 @@ class Tier(str, Enum):
     ANONYMOUS = "anonymous"
     FREE = "free"
     PRO = "pro"
+    STARTER = "starter"
     BUSINESS = "business"
 
 
@@ -29,7 +30,8 @@ class TierConfig:
     formality: bool  # Can use formal/informal toggle
 
 
-TIER_CONFIGS: dict[Tier, TierConfig] = {
+# Consumer tier configurations (web app, iOS app)
+CONSUMER_TIER_CONFIGS: dict[Tier, TierConfig] = {
     Tier.ANONYMOUS: TierConfig(
         max_chars_per_request=400,
         period_limit=5_000,
@@ -48,19 +50,38 @@ TIER_CONFIGS: dict[Tier, TierConfig] = {
         period_type="monthly",
         formality=True,
     ),
+}
+
+# B2B tier configurations (public API)
+B2B_TIER_CONFIGS: dict[Tier, TierConfig] = {
+    Tier.STARTER: TierConfig(
+        max_chars_per_request=10_000,
+        period_limit=500_000,
+        period_type="monthly",
+        formality=True,
+    ),
     Tier.BUSINESS: TierConfig(
         max_chars_per_request=10_000,
-        period_limit=2_000_000,
+        period_limit=3_000_000,
         period_type="monthly",
         formality=True,
     ),
 }
 
+# Combined lookup for backward compatibility
+TIER_CONFIGS: dict[Tier, TierConfig] = {**CONSUMER_TIER_CONFIGS, **B2B_TIER_CONFIGS}
 
-def get_tier_config(tier: Tier | str) -> TierConfig:
-    """Get configuration for a tier by enum or string value."""
+
+def get_tier_config(tier: Tier | str, product: str = "consumer") -> TierConfig:
+    """Get configuration for a tier, optionally scoped to a product line."""
     if isinstance(tier, str):
         tier = Tier(tier)
+
+    configs = B2B_TIER_CONFIGS if product == "b2b" else CONSUMER_TIER_CONFIGS
+    if tier in configs:
+        return configs[tier]
+
+    # Fall back to combined lookup
     return TIER_CONFIGS[tier]
 
 

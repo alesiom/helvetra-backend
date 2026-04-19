@@ -33,8 +33,8 @@ class User(Base):
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    subscription: Mapped["Subscription | None"] = relationship(
-        back_populates="user", cascade="all, delete-orphan", uselist=False
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
     __table_args__ = (

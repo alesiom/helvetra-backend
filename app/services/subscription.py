@@ -15,6 +15,7 @@ from app.models.subscription import (
     CreditBalance,
     CreditTransaction,
     Subscription,
+    SubscriptionProduct,
     SubscriptionStatus,
     SubscriptionTier,
     UsagePeriod,
@@ -25,6 +26,7 @@ from app.models.subscription import (
 class UsageStatus:
     """Current usage status for a user."""
 
+    product: SubscriptionProduct
     tier: SubscriptionTier
     status: SubscriptionStatus
     characters_used: int
@@ -35,15 +37,29 @@ class UsageStatus:
     period_end: datetime | None
 
 
-async def get_or_create_subscription(db: AsyncSession, user_id: uuid.UUID) -> Subscription:
-    """Get existing subscription or create a free tier one."""
-    result = await db.execute(select(Subscription).where(Subscription.user_id == user_id))
+async def get_or_create_subscription(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    product: SubscriptionProduct = SubscriptionProduct.CONSUMER,
+) -> Subscription:
+    """Get existing subscription or create a default one for the given product."""
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.product == product,
+        )
+    )
     subscription = result.scalar_one_or_none()
 
     if subscription is None:
+        default_tier = (
+            SubscriptionTier.STARTER if product == SubscriptionProduct.B2B
+            else SubscriptionTier.FREE
+        )
         subscription = Subscription(
             user_id=user_id,
-            tier=SubscriptionTier.FREE,
+            product=product,
+            tier=default_tier,
             status=SubscriptionStatus.ACTIVE,
         )
         db.add(subscription)
@@ -120,6 +136,7 @@ async def get_usage_status(db: AsyncSession, user_id: uuid.UUID) -> UsageStatus:
     billing_end = subscription.current_period_end or period.period_end
 
     return UsageStatus(
+        product=subscription.product,
         tier=subscription.tier,
         status=subscription.status,
         characters_used=period.characters_used,

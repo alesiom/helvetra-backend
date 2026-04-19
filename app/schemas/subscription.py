@@ -7,12 +7,13 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.subscription import SubscriptionStatus, SubscriptionTier
+from app.models.subscription import SubscriptionProduct, SubscriptionStatus, SubscriptionTier
 
 
 class SubscriptionResponse(BaseModel):
     """Current subscription and usage status."""
 
+    product: SubscriptionProduct = SubscriptionProduct.CONSUMER
     tier: SubscriptionTier
     status: SubscriptionStatus
     characters_used: int

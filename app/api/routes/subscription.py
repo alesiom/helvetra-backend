@@ -32,6 +32,7 @@ async def get_subscription(
     status = await get_usage_status(db, user.id)
 
     return SubscriptionResponse(
+        product=status.product,
         tier=status.tier,
         status=status.status,
         characters_used=status.characters_used,

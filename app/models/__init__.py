@@ -5,6 +5,7 @@ Database models.
 from app.models.feedback import Feedback
 from app.models.subscription import (
     Subscription,
+    SubscriptionProduct,
     SubscriptionSource,
     SubscriptionStatus,
     SubscriptionTier,
@@ -15,6 +16,7 @@ __all__ = [
     "Feedback",
     "RefreshToken",
     "Subscription",
+    "SubscriptionProduct",
     "SubscriptionSource",
     "SubscriptionStatus",
     "SubscriptionTier",
