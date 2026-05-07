@@ -303,3 +303,66 @@ class TestTranslateEndpoint:
 
         assert response.status_code == 200
         assert response.json()["data"]["translation"] == "Hello"
+
+
+class TestPromptStructure:
+    """
+    Verify the prompt content used to call the LLM resists treating user input
+    as instructions. Assertions check the prompt strings and templates directly,
+    so they are deterministic and isolated from the HTTP layer.
+    """
+
+    def test_user_text_is_wrapped_in_delimiters(self):
+        """User text must be wrapped in <text>...</text> tags."""
+        from app.services.translation import USER_MESSAGE_TEMPLATE
+
+        wrapped = USER_MESSAGE_TEMPLATE.format(text="Hello world")
+        assert "<text>" in wrapped and "</text>" in wrapped
+        assert "Hello world" in wrapped
+
+    def test_user_message_includes_post_content_reminder(self):
+        """Wrapper must end with a reminder to translate, not respond."""
+        from app.services.translation import USER_MESSAGE_TEMPLATE
+
+        wrapped = USER_MESSAGE_TEMPLATE.format(text="Hello").lower()
+        assert "output only the translation" in wrapped
+
+    def test_system_prompt_forbids_answering_questions(self):
+        """System prompt must instruct the model to translate questions, not answer them."""
+        from app.services.translation import SYSTEM_PROMPT
+
+        prompt = SYSTEM_PROMPT.lower()
+        assert "translate the question" in prompt
+        assert "do not answer" in prompt
+
+    def test_system_prompt_forbids_fulfilling_instructions(self):
+        """System prompt must instruct the model to translate instructions, not fulfill them."""
+        from app.services.translation import SYSTEM_PROMPT
+
+        prompt = SYSTEM_PROMPT.lower()
+        assert "translate the instruction" in prompt
+        assert "do not fulfill" in prompt
+
+    def test_system_prompt_forbids_computing_math(self):
+        """System prompt must instruct the model to translate math problems, not solve them."""
+        from app.services.translation import SYSTEM_PROMPT
+
+        prompt = SYSTEM_PROMPT.lower()
+        assert "do not compute" in prompt
+
+    def test_system_prompt_anchors_letter_names(self):
+        """System prompt must forbid swapping greeting and signature names."""
+        from app.services.translation import SYSTEM_PROMPT
+
+        prompt = SYSTEM_PROMPT.lower()
+        assert "never swap" in prompt
+        assert "greeting" in prompt and "signature" in prompt
+
+    def test_auto_detect_prompt_inherits_anti_instruction_rules(self):
+        """The auto-detect prompt must apply the same anti-instruction rules."""
+        from app.services.translation import SYSTEM_PROMPT_AUTO_DETECT
+
+        prompt = SYSTEM_PROMPT_AUTO_DETECT.lower()
+        assert "translate the question" in prompt
+        assert "translate the instruction" in prompt
+        assert "never swap" in prompt
