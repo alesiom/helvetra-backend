@@ -366,3 +366,39 @@ class TestPromptStructure:
         assert "translate the question" in prompt
         assert "translate the instruction" in prompt
         assert "never swap" in prompt
+
+
+class TestStripWrapperTags:
+    """
+    The model occasionally echoes the <text>...</text> wrapper back into its
+    output. The post-processing helper must remove those tags without altering
+    legitimate content.
+    """
+
+    def test_strips_leading_and_trailing_tags(self):
+        from app.services.translation import strip_wrapper_tags
+
+        assert strip_wrapper_tags("<text>\nHallo\n</text>") == "Hallo"
+
+    def test_strips_only_outer_tags(self):
+        """Tags inside the body (legitimate user content) must remain."""
+        from app.services.translation import strip_wrapper_tags
+
+        result = strip_wrapper_tags("<text>before <text>inner</text> after</text>")
+        assert result == "before <text>inner</text> after"
+
+    def test_passthrough_when_no_tags(self):
+        from app.services.translation import strip_wrapper_tags
+
+        assert strip_wrapper_tags("Bonjour le monde") == "Bonjour le monde"
+
+    def test_handles_only_one_side(self):
+        from app.services.translation import strip_wrapper_tags
+
+        assert strip_wrapper_tags("<text>\nHallo") == "Hallo"
+        assert strip_wrapper_tags("Hallo\n</text>") == "Hallo"
+
+    def test_idempotent_on_doubled_tags(self):
+        from app.services.translation import strip_wrapper_tags
+
+        assert strip_wrapper_tags("<text><text>Hi</text></text>") == "Hi"
