@@ -422,3 +422,34 @@ class TestStripWrapperTags:
         from app.services.translation import strip_wrapper_tags
 
         assert strip_wrapper_tags("<text><text>Hi</text></text>") == "Hi"
+
+    def test_strips_trailing_note_block(self):
+        """Apertus appends '(Note: ...)' explanations after a blank line; strip those."""
+        from app.services.translation import strip_wrapper_tags
+
+        raw = (
+            'Do\n\n(Note: The original text "Here" does not contain any '
+            "translatable content. If this is a placeholder or a test, please "
+            "provide actual text to translate.)"
+        )
+        assert strip_wrapper_tags(raw) == "Do"
+
+    def test_strips_trailing_translation_note(self):
+        from app.services.translation import strip_wrapper_tags
+
+        raw = "Hallo Welt\n\n*Translation note: This is a casual greeting.*"
+        assert strip_wrapper_tags(raw) == "Hallo Welt"
+
+    def test_preserves_inline_parenthetical_in_translation(self):
+        """Legitimate parentheticals inside the translation must be kept."""
+        from app.services.translation import strip_wrapper_tags
+
+        raw = "Hello world (informal version)"
+        assert strip_wrapper_tags(raw) == "Hello world (informal version)"
+
+    def test_preserves_parenthetical_letter_line(self):
+        """Multi-line letter where a line is parenthetical must be kept."""
+        from app.services.translation import strip_wrapper_tags
+
+        raw = "Dear Anna,\n(your friend)\nJohn"
+        assert strip_wrapper_tags(raw) == "Dear Anna,\n(your friend)\nJohn"
