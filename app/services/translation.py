@@ -291,8 +291,20 @@ async def translate_text(
 
     translation = strip_wrapper_tags(translation)
 
-    # Validate output length ratio to detect potential prompt injection
-    if len(translation) > len(text) * 3:
+    # Length-based prompt-injection guard. The 3x ratio is too tight for
+    # short inputs (a few-word phrase plus normal language expansion can
+    # exceed it harmlessly), so apply an absolute floor so the guard only
+    # bites on genuinely oversized outputs.
+    max_translation_length = max(len(text) * 3, len(text) + 80)
+    if len(translation) > max_translation_length:
+        logger.warning(
+            "Suspicious output rejected: input=%d chars, output=%d chars, "
+            "limit=%d. Output sample: %r",
+            len(text),
+            len(translation),
+            max_translation_length,
+            translation[:200],
+        )
         raise ValueError("Translation output suspiciously long")
 
     processing_time_ms = int((time.time() - start_time) * 1000)

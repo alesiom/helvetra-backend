@@ -124,10 +124,10 @@ class TestTranslateEndpoint:
         assert response.status_code == 422
 
     def test_translate_suspicious_output_rejected(self, client: TestClient, httpx_mock: HTTPXMock):
-        """Output more than 3x input length is rejected as suspicious."""
-        # 5-char input, return 20-char output (4x ratio)
+        """Output that exceeds both 3x input length and an absolute floor is rejected."""
+        # Input "Hi" (2 chars). Threshold = max(2*3, 2+80) = 82. Mock 200 chars.
         httpx_mock.add_response(
-            json=mock_translation_response("This is a very long suspicious output text")
+            json=mock_translation_response("X" * 200)
         )
 
         response = client.post(
@@ -139,8 +139,28 @@ class TestTranslateEndpoint:
             }
         )
 
-        assert response.status_code == 500
-        assert "suspicious" in response.json()["detail"].lower()
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "SUSPICIOUS_OUTPUT"
+
+    def test_translate_short_input_allows_normal_expansion(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """Short inputs must allow normal-length translations within the absolute floor."""
+        # Input "Here" (4 chars). Old threshold (4*3=12) would reject a normal
+        # translation; new threshold max(12, 84) = 84 must allow it.
+        httpx_mock.add_response(json=mock_translation_response("Hie isch's"))
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Here",
+                "source_lang": "en",
+                "target_lang": "gsw",
+            }
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["translation"] == "Hie isch's"
 
     def test_translate_api_error_handled(self, client: TestClient, httpx_mock: HTTPXMock):
         """API errors are handled gracefully."""
