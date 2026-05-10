@@ -423,7 +423,7 @@ class TestStripWrapperTags:
 
         assert strip_wrapper_tags("<text><text>Hi</text></text>") == "Hi"
 
-    def test_strips_trailing_note_block(self):
+    def test_strips_trailing_note_after_blank_line(self):
         """Apertus appends '(Note: ...)' explanations after a blank line; strip those."""
         from app.services.translation import strip_wrapper_tags
 
@@ -432,6 +432,13 @@ class TestStripWrapperTags:
             "translatable content. If this is a placeholder or a test, please "
             "provide actual text to translate.)"
         )
+        assert strip_wrapper_tags(raw) == "Do"
+
+    def test_strips_trailing_note_after_single_newline(self):
+        """Apertus also uses just one newline before the note; strip those too."""
+        from app.services.translation import strip_wrapper_tags
+
+        raw = "Do\n(Note: The original text was very short and ambiguous.)"
         assert strip_wrapper_tags(raw) == "Do"
 
     def test_strips_trailing_translation_note(self):

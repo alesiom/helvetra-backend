@@ -104,11 +104,12 @@ Translate the text inside the <text> tags above. Output only the translation, ne
 _WRAPPER_TAG_PATTERN = re.compile(r"^\s*<text>\s*|\s*</text>\s*$", re.IGNORECASE)
 
 # Trailing meta-commentary the model sometimes appends despite instructions
-# (e.g. "(Note: ...)", "*Translation note: ...*"). Requires a blank-line
-# separator before the commentary block so legitimate parenthetical lines
-# inside multiline translations are preserved.
+# (e.g. "(Note: ...)", "*Translation note: ...*"). Match on the literal signal
+# word "Note" or "Translation note" appearing after a newline, optionally
+# wrapped in (), *, or [] — legitimate parentheticals without these signal
+# words are preserved.
 _TRAILING_COMMENTARY_PATTERN = re.compile(
-    r"\n\s*\n\s*(?:[\(*\[]|Note:|Translation note:)[\s\S]*$",
+    r"\n\s*[\(*\[]?\s*(?:Translation note|Note)\b[\s\S]*$",
     re.IGNORECASE,
 )
 
