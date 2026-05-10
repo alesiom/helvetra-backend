@@ -103,13 +103,22 @@ Translate the text inside the <text> tags above. Output only the translation, ne
 # Pattern matching wrapper tags the model occasionally echoes back into its output.
 _WRAPPER_TAG_PATTERN = re.compile(r"^\s*<text>\s*|\s*</text>\s*$", re.IGNORECASE)
 
-# Trailing meta-commentary the model sometimes appends despite instructions
-# (e.g. "(Note: ...)", "*Translation note: ...*"). Match on the literal signal
-# word "Note" or "Translation note" appearing after a newline, optionally
-# wrapped in (), *, or [] — legitimate parentheticals without these signal
-# words are preserved.
+# Trailing meta-commentary the model sometimes appends despite instructions.
+# Match on a handful of signal phrases Apertus uses to begin these blocks,
+# optionally wrapped in (), *, or []. Legitimate parenthetical lines that
+# don't start with one of these phrases (e.g. "(your friend)") are preserved.
+_COMMENTARY_SIGNAL_PHRASES = (
+    r"Translation note",
+    r"Note",
+    r"This is (?:a|the|just)",
+    r"This translates",
+    r"The (?:original|translation|text|input|source)",
+    r"Translated (?:literally|directly|as)",
+    r"If (?:this|the)",
+    r"Please (?:provide|note)",
+)
 _TRAILING_COMMENTARY_PATTERN = re.compile(
-    r"\n\s*[\(*\[]?\s*(?:Translation note|Note)\b[\s\S]*$",
+    r"\n\s*[\(*\[]?\s*(?:" + "|".join(_COMMENTARY_SIGNAL_PHRASES) + r")\b[\s\S]*$",
     re.IGNORECASE,
 )
 

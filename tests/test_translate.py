@@ -447,6 +447,19 @@ class TestStripWrapperTags:
         raw = "Hallo Welt\n\n*Translation note: This is a casual greeting.*"
         assert strip_wrapper_tags(raw) == "Hallo Welt"
 
+    def test_strips_trailing_this_is_a_literal_translation(self):
+        """Apertus uses 'This is a literal translation...' as a meta block."""
+        from app.services.translation import strip_wrapper_tags
+
+        raw = "Do isch do\n(This is a literal translation of the text, as the original text is very short and ambiguous.)"
+        assert strip_wrapper_tags(raw) == "Do isch do"
+
+    def test_strips_trailing_the_original_text(self):
+        from app.services.translation import strip_wrapper_tags
+
+        raw = "Hallo\n(The original text was very short.)"
+        assert strip_wrapper_tags(raw) == "Hallo"
+
     def test_preserves_inline_parenthetical_in_translation(self):
         """Legitimate parentheticals inside the translation must be kept."""
         from app.services.translation import strip_wrapper_tags
