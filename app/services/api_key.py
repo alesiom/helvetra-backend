@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tiers import Tier, get_tier_config
 from app.models.api_key import ApiKey
 from app.models.subscription import Subscription, SubscriptionProduct, SubscriptionStatus
 
 KEY_PREFIX = "hv_live_"
-MAX_KEYS_PER_USER = 10
 
 
 def generate_api_key() -> tuple[str, str, str]:
@@ -47,6 +47,20 @@ async def has_active_b2b_subscription(db: AsyncSession, user_id: uuid.UUID) -> b
     return result.scalar_one_or_none() is not None
 
 
+async def get_b2b_subscription(
+    db: AsyncSession, user_id: uuid.UUID
+) -> Subscription | None:
+    """Return the user's active B2B subscription, if any."""
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.product == SubscriptionProduct.B2B,
+            Subscription.status == SubscriptionStatus.ACTIVE,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def create_api_key(
     db: AsyncSession, user_id: uuid.UUID, name: str
 ) -> tuple[ApiKey, str]:
@@ -54,6 +68,11 @@ async def create_api_key(
     Create a new API key for the user.
     Returns (api_key_record, raw_key). The raw key is only available at creation time.
     """
+    # Resolve the user's tier-specific key cap
+    subscription = await get_b2b_subscription(db, user_id)
+    tier = Tier(subscription.tier.value) if subscription else Tier.STARTER
+    max_keys = get_tier_config(tier, product="b2b").max_api_keys
+
     # Check key limit
     count_result = await db.execute(
         select(func.count()).select_from(ApiKey).where(
@@ -62,8 +81,10 @@ async def create_api_key(
         )
     )
     active_count = count_result.scalar()
-    if active_count >= MAX_KEYS_PER_USER:
-        raise ValueError(f"Maximum of {MAX_KEYS_PER_USER} active API keys allowed")
+    if active_count >= max_keys:
+        raise ValueError(
+            f"Maximum of {max_keys} active API keys allowed on the {tier.value} tier"
+        )
 
     full_key, key_prefix, key_hash = generate_api_key()
 

@@ -29,6 +29,9 @@ class TierConfig:
     # Feature flags
     formality: bool  # Can use formal/informal toggle
 
+    # API access
+    max_api_keys: int  # Active API keys allowed (0 = no API access)
+
 
 # Consumer tier configurations (web app, iOS app)
 CONSUMER_TIER_CONFIGS: dict[Tier, TierConfig] = {
@@ -37,18 +40,21 @@ CONSUMER_TIER_CONFIGS: dict[Tier, TierConfig] = {
         period_limit=5_000,
         period_type="weekly",
         formality=True,
+        max_api_keys=0,
     ),
     Tier.FREE: TierConfig(
         max_chars_per_request=1_000,
         period_limit=20_000,
         period_type="monthly",
         formality=True,
+        max_api_keys=0,
     ),
     Tier.PRO: TierConfig(
         max_chars_per_request=5_000,
         period_limit=500_000,
         period_type="monthly",
         formality=True,
+        max_api_keys=0,
     ),
 }
 
@@ -59,12 +65,14 @@ B2B_TIER_CONFIGS: dict[Tier, TierConfig] = {
         period_limit=500_000,
         period_type="monthly",
         formality=True,
+        max_api_keys=1,
     ),
     Tier.BUSINESS: TierConfig(
-        max_chars_per_request=10_000,
-        period_limit=3_000_000,
+        max_chars_per_request=50_000,
+        period_limit=2_000_000,
         period_type="monthly",
         formality=True,
+        max_api_keys=10,
     ),
 }
 
