@@ -249,11 +249,15 @@ async def record_webhook_event(
     error: str | None = None,
 ) -> WebhookEvent:
     """Record webhook event for idempotency and audit."""
+    # default=str coerces non-JSON-native types (notably Decimal, which
+    # Stripe uses for fractional-unit graduated prices) to strings so the
+    # payload can be persisted. Without this, B2B metered-price webhooks
+    # fail to record with a TypeError.
     event = WebhookEvent(
         source=source,
         event_id=event_id,
         event_type=event_type,
-        payload=json.dumps(payload),
+        payload=json.dumps(payload, default=str),
         processed=processed,
         error=error,
     )
