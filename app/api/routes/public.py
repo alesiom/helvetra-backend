@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from app.api.dependencies import get_current_user_from_api_key
 from app.core.database import get_db
 from app.core.tiers import Tier, get_tier_config
@@ -17,6 +19,10 @@ from app.models.api_key import ApiKey
 from app.models.subscription import SubscriptionProduct
 from app.models.user import User
 from app.schemas.translate import SUPPORTED_LANGUAGE_CODES
+from app.services.stripe_b2b import (
+    generate_meter_idempotency_key,
+    report_translation_meter_event,
+)
 from app.services.subscription import get_or_create_subscription, get_usage_status, record_usage
 from app.services.translation import translate_text
 
@@ -165,6 +171,16 @@ async def public_translate(
         )
 
         await db.commit()
+
+        # Report usage to Stripe asynchronously so meter problems never
+        # block the translation response.
+        asyncio.create_task(
+            report_translation_meter_event(
+                stripe_customer_id=user.stripe_customer_id,
+                characters=text_length,
+                idempotency_key=generate_meter_idempotency_key(user.id, text_length),
+            )
+        )
 
         return PublicTranslateResponse(
             translation=result.translation,

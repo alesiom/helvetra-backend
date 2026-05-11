@@ -13,14 +13,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.tiers import Tier
 from app.models.subscription import (
     Subscription,
+    SubscriptionProduct,
     SubscriptionSource,
     SubscriptionStatus,
     SubscriptionTier,
 )
 from app.models.user import User
 from app.services.payrexx import check_idempotency, record_webhook_event
+from app.services.stripe_b2b import tier_from_price_lookup
 from app.services.subscription import get_or_create_subscription, sync_usage_period_limit
 
 logger = logging.getLogger(__name__)
@@ -121,10 +124,47 @@ def verify_webhook_signature(payload: bytes, sig_header: str) -> stripe.Event | 
         return None
 
 
+def _detect_b2b_tier_from_subscription(stripe_sub: Any) -> Tier | None:
+    """
+    Inspect a Stripe subscription's line items to determine whether it
+    represents a B2B Starter, B2B Business, or consumer subscription.
+    Returns the B2B Tier if found, None for consumer.
+    """
+    for item in stripe_sub.items.data:
+        price = getattr(item, "price", None)
+        lookup_key = getattr(price, "lookup_key", None) if price else None
+        if lookup_key:
+            tier = tier_from_price_lookup(lookup_key)
+            if tier:
+                return tier
+    return None
+
+
+def _first_recurring_item(stripe_sub: Any) -> Any:
+    """
+    Pick the first non-metered subscription item for period dates.
+    The metered item exists for overage tracking; its period dates match
+    the base subscription, but we prefer the licensed base item explicitly.
+    """
+    for item in stripe_sub.items.data:
+        price = getattr(item, "price", None)
+        recurring = getattr(price, "recurring", None) if price else None
+        usage_type = getattr(recurring, "usage_type", None) if recurring else None
+        if usage_type != "metered":
+            return item
+    return stripe_sub.items.data[0]
+
+
+_B2B_TIER_TO_DB_TIER = {
+    Tier.STARTER: SubscriptionTier.STARTER,
+    Tier.BUSINESS: SubscriptionTier.BUSINESS,
+}
+
+
 async def _handle_checkout_completed(
     db: AsyncSession, event_data: Any
 ) -> bool:
-    """Activate PRO subscription after successful checkout."""
+    """Activate consumer PRO or B2B subscription after successful checkout."""
     session = event_data.object
     customer_id = session.customer
     stripe_sub_id = session.subscription
@@ -143,15 +183,27 @@ async def _handle_checkout_completed(
         logger.warning(f"No user found for Stripe customer {customer_id}")
         return False
 
-    subscription = await get_or_create_subscription(db, user.id)
-
-    # Retrieve subscription details from Stripe for period dates
+    # Retrieve subscription details from Stripe to inspect line items
     stripe.api_key = settings.stripe_secret_key
     stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
-    sub_item = stripe_sub.items.data[0]
+    b2b_tier = _detect_b2b_tier_from_subscription(stripe_sub)
+    sub_item = _first_recurring_item(stripe_sub)
+
+    if b2b_tier is not None:
+        # B2B subscription (Starter or Business)
+        subscription = await get_or_create_subscription(
+            db, user.id, SubscriptionProduct.B2B
+        )
+        new_tier = _B2B_TIER_TO_DB_TIER[b2b_tier]
+        product_label = "B2B"
+    else:
+        # Consumer Helvetra+ subscription
+        subscription = await get_or_create_subscription(db, user.id)
+        new_tier = SubscriptionTier.PRO
+        product_label = "consumer"
 
     old_tier = subscription.tier
-    subscription.tier = SubscriptionTier.PRO
+    subscription.tier = new_tier
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.source = SubscriptionSource.STRIPE
     subscription.external_id = stripe_sub_id
@@ -162,10 +214,28 @@ async def _handle_checkout_completed(
         sub_item.current_period_end, tz=timezone.utc
     )
 
-    if old_tier != SubscriptionTier.PRO:
-        await sync_usage_period_limit(db, user.id, SubscriptionTier.PRO)
+    if old_tier != new_tier:
+        await sync_usage_period_limit(db, user.id, new_tier)
 
-    logger.info(f"Activated PRO subscription for user {user.id} via Stripe checkout")
+    logger.info(
+        f"Activated {product_label} {new_tier.value} subscription for user "
+        f"{user.id} via Stripe checkout"
+    )
+    return True
+
+
+async def _handle_trial_will_end(db: AsyncSession, event_data: Any) -> bool:
+    """
+    Log trial-ending events. Email reminders to the customer will be
+    wired up alongside the B2B dashboard work (see helvetra/frontend#11);
+    Stripe also sends its own reminder by default.
+    """
+    stripe_sub = event_data.object
+    logger.info(
+        "Stripe trial_will_end event for subscription %s (customer %s)",
+        getattr(stripe_sub, "id", "<unknown>"),
+        getattr(stripe_sub, "customer", "<unknown>"),
+    )
     return True
 
 
@@ -239,7 +309,11 @@ async def _handle_invoice_payment_failed(
 async def _handle_subscription_deleted(
     db: AsyncSession, event_data: Any
 ) -> bool:
-    """Downgrade to FREE tier when Stripe subscription is cancelled/deleted."""
+    """
+    Handle a Stripe subscription cancellation. For consumer subscriptions,
+    downgrade to FREE. For B2B subscriptions, mark CANCELLED so API key
+    auth rejects further calls but the historic tier record is preserved.
+    """
     stripe_sub = event_data.object
     stripe_sub_id = stripe_sub.id
 
@@ -254,6 +328,15 @@ async def _handle_subscription_deleted(
     if not subscription:
         logger.warning(f"No subscription found for deleted Stripe sub {stripe_sub_id}")
         return False
+
+    if subscription.product == SubscriptionProduct.B2B:
+        subscription.status = SubscriptionStatus.CANCELLED
+        subscription.external_id = None
+        logger.info(
+            f"Cancelled B2B {subscription.tier.value} subscription "
+            f"{subscription.id} (Stripe sub deleted)"
+        )
+        return True
 
     old_tier = subscription.tier
     subscription.tier = SubscriptionTier.FREE
@@ -300,6 +383,8 @@ async def process_webhook(db: AsyncSession, event: Any) -> dict[str, Any]:
             success = await _handle_invoice_payment_failed(db, event_data)
         elif event_type == "customer.subscription.deleted":
             success = await _handle_subscription_deleted(db, event_data)
+        elif event_type == "customer.subscription.trial_will_end":
+            success = await _handle_trial_will_end(db, event_data)
         else:
             logger.info(f"Unhandled Stripe event type: {event_type}")
             success = True

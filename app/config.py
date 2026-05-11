@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     stripe_price_monthly_id: str = ""
     stripe_price_yearly_id: str = ""
 
+    # Stripe B2B — resolved at runtime via lookup keys, not raw price IDs,
+    # so price rotations in the Stripe Dashboard don't require code/env changes.
+    stripe_b2b_starter_base_lookup: str = ""
+    stripe_b2b_starter_overage_lookup: str = ""
+    stripe_b2b_business_base_lookup: str = ""
+    stripe_b2b_business_overage_lookup: str = ""
+    stripe_b2b_meter_event_name: str = ""
+
     # Apple Sign-In and StoreKit
     apple_bundle_id: str = "ch.helvetra.app"
     apple_team_id: str = ""
