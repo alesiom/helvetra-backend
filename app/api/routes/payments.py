@@ -19,9 +19,11 @@ from app.services.stripe_service import (
 
 router = APIRouter(prefix="/payments")
 
-# B2B redirect URLs after Checkout completes or is cancelled.
-B2B_SUCCESS_URL = "https://helvetra.ch/api/success"
-B2B_CANCEL_URL = "https://helvetra.ch/api/cancel"
+# B2B redirect URLs after Checkout completes or is cancelled. Lives under
+# /developers because /api/* is the backend API prefix and nginx proxies
+# everything matching /api/ to FastAPI rather than to the Nuxt frontend.
+B2B_SUCCESS_URL = "https://helvetra.ch/developers/success"
+B2B_CANCEL_URL = "https://helvetra.ch/developers/cancel"
 
 
 class CreateGatewayRequest(BaseModel):
