@@ -6,6 +6,7 @@ Initializes the app with middleware and routes.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.public_docs import install_public_docs
 from app.api.routes import (
     api_keys,
     auth,
@@ -53,3 +54,7 @@ app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
 
 # B2B Public API — separate prefix, API key auth
 app.include_router(public.router, prefix="/api/public/v1", tags=["Public API"])
+
+# Hosted developer documentation for the public API (always on in prod;
+# the consumer /docs and /redoc remain debug-only).
+install_public_docs(app)

@@ -48,59 +48,209 @@ SUPPORTED_LANGUAGES = [
 class PublicTranslateRequest(BaseModel):
     """Translation request for the public API."""
 
-    text: str = Field(..., min_length=1)
-    source_lang: str = Field(..., min_length=2, max_length=4)
-    target_lang: str = Field(..., min_length=2, max_length=3)
-    formality: str = Field(default="auto")
-    dialect: str | None = Field(default=None)
+    text: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Text to translate. The maximum length per request depends on "
+            "your tier (10,000 characters on Starter, 50,000 on Business)."
+        ),
+        examples=["Grüezi mitenand! Schön, dass ihr da sind."],
+    )
+    source_lang: str = Field(
+        ...,
+        min_length=2,
+        max_length=4,
+        description=(
+            "ISO 639-1/3 source language code, or `auto` to let the engine "
+            "detect the source language. Supported codes: `de`, `gsw`, "
+            "`fr`, `it`, `en`, `rm`."
+        ),
+        examples=["gsw"],
+    )
+    target_lang: str = Field(
+        ...,
+        min_length=2,
+        max_length=3,
+        description=(
+            "ISO 639-1/3 target language code. Supported codes: `de`, "
+            "`gsw`, `fr`, `it`, `en`, `rm`. Must differ from `source_lang`."
+        ),
+        examples=["en"],
+    )
+    formality: str = Field(
+        default="auto",
+        description=(
+            "Address formality for languages with a T/V distinction "
+            "(German, French, Italian). One of `auto`, `informal`, "
+            "`formal`. Ignored for English and Swiss German."
+        ),
+        examples=["auto"],
+    )
+    dialect: str | None = Field(
+        default=None,
+        description=(
+            "Swiss German dialect to use when `target_lang` is `gsw`. "
+            "One of `bern`, `zurich`, `basel`, `stgallen`, `wallis`, "
+            "`luzern`. Ignored for other target languages."
+        ),
+        examples=["bern"],
+    )
 
 
 class PublicTranslateResponse(BaseModel):
     """Translation result from the public API."""
 
-    translation: str
-    source_lang: str
-    target_lang: str
-    detected_source_lang: str | None = None
-    characters: int
+    translation: str = Field(
+        ...,
+        description="Translated text in the target language.",
+        examples=["Hello everyone! Glad you're here."],
+    )
+    source_lang: str = Field(
+        ...,
+        description=(
+            "Source language code that was used. If you sent `auto`, this "
+            "is the detected language."
+        ),
+        examples=["gsw"],
+    )
+    target_lang: str = Field(..., description="Target language code.", examples=["en"])
+    detected_source_lang: str | None = Field(
+        default=None,
+        description=(
+            "Populated only when the request used `source_lang=auto`. "
+            "Contains the language code the engine inferred."
+        ),
+    )
+    characters: int = Field(
+        ...,
+        description=(
+            "Number of characters in the input text. Counts against your "
+            "monthly quota."
+        ),
+        examples=[42],
+    )
 
 
 class PublicLanguageResponse(BaseModel):
     """Language entry in the supported languages list."""
 
-    code: str
-    name: str
-    native_name: str
+    code: str = Field(..., description="ISO language code.", examples=["gsw"])
+    name: str = Field(..., description="English name.", examples=["Swiss German"])
+    native_name: str = Field(
+        ..., description="Native-language name.", examples=["Schwyzerdütsch"]
+    )
 
 
 class PublicUsageResponse(BaseModel):
     """Current usage status for the authenticated API key owner."""
 
-    characters_used: int
-    characters_limit: int
-    characters_remaining: int
-    period_start: str | None
-    period_end: str | None
+    characters_used: int = Field(
+        ...,
+        description="Characters consumed in the current billing period.",
+        examples=[12450],
+    )
+    characters_limit: int = Field(
+        ...,
+        description=(
+            "Total characters included in your subscription for this "
+            "period. Usage beyond this is billed as overage at your "
+            "tier's per-million rate."
+        ),
+        examples=[500000],
+    )
+    characters_remaining: int = Field(
+        ...,
+        description=(
+            "Characters still included before overage starts. May be 0 "
+            "or negative once you exceed the included quota."
+        ),
+        examples=[487550],
+    )
+    period_start: str | None = Field(
+        default=None,
+        description="ISO-8601 timestamp marking the start of the billing period.",
+    )
+    period_end: str | None = Field(
+        default=None,
+        description="ISO-8601 timestamp marking the end of the billing period.",
+    )
 
 
 class PublicErrorDetail(BaseModel):
-    """Error response from the public API."""
+    """Error response body shape returned under the `detail` key for 4xx/5xx."""
 
-    code: str
-    message: str
-    detail: dict[str, Any] | None = None
+    code: str = Field(
+        ...,
+        description=(
+            "Stable machine-readable error code. Common values: "
+            "`UNSUPPORTED_LANGUAGE`, `UNSUPPORTED_DIALECT`, `TEXT_TOO_LONG`, "
+            "`USAGE_LIMIT_EXCEEDED`, `SUSPICIOUS_OUTPUT`, "
+            "`INVALID_API_KEY`, `INTERNAL_ERROR`."
+        ),
+        examples=["TEXT_TOO_LONG"],
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable description of the error.",
+        examples=["Text exceeds 10000 character limit."],
+    )
+    detail: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional structured context (e.g. the offending limit).",
+    )
 
 
 # --- Routes ---
 
 
-@router.post("/translate", response_model=PublicTranslateResponse)
+@router.post(
+    "/translate",
+    response_model=PublicTranslateResponse,
+    summary="Translate text",
+    responses={
+        400: {
+            "model": PublicErrorDetail,
+            "description": "Unsupported language code or dialect.",
+        },
+        401: {
+            "model": PublicErrorDetail,
+            "description": "Missing or invalid API key.",
+        },
+        422: {
+            "model": PublicErrorDetail,
+            "description": (
+                "Translation rejected. Usually `SUSPICIOUS_OUTPUT` "
+                "(the model produced something unexpectedly long)."
+            ),
+        },
+        429: {
+            "model": PublicErrorDetail,
+            "description": "Monthly character limit exceeded for this subscription.",
+        },
+        500: {
+            "model": PublicErrorDetail,
+            "description": "Internal translation service error.",
+        },
+    },
+)
 async def public_translate(
     request: PublicTranslateRequest,
     auth: tuple[User, ApiKey] = Depends(get_current_user_from_api_key),
     db: AsyncSession = Depends(get_db),
 ) -> PublicTranslateResponse:
-    """Translate text between supported languages."""
+    """
+    Translate text from one supported language to another.
+
+    Authenticate with your API key via the `X-API-Key` header. The
+    request body specifies the source and target language codes, the
+    text to translate, and optionally a formality preference (for
+    German, French, Italian) or a Swiss German dialect (when
+    `target_lang` is `gsw`).
+
+    Each successful translation counts toward your monthly character
+    quota. See `GET /usage` for current consumption.
+    """
     user, api_key = auth
 
     # Validate language codes
@@ -210,20 +360,44 @@ async def public_translate(
         )
 
 
-@router.get("/languages", response_model=list[PublicLanguageResponse])
+@router.get(
+    "/languages",
+    response_model=list[PublicLanguageResponse],
+    summary="List supported languages",
+    responses={401: {"model": PublicErrorDetail}},
+)
 async def public_languages(
     auth: tuple[User, ApiKey] = Depends(get_current_user_from_api_key),
 ) -> list[PublicLanguageResponse]:
-    """List all supported languages for translation."""
+    """
+    Return all language codes the API can translate between.
+
+    The set is stable and rarely changes; you can cache the response on
+    your side. Swiss German (`gsw`) supports multiple regional dialects
+    selectable via the `dialect` field on the translate endpoint.
+    """
     return [PublicLanguageResponse(**lang) for lang in SUPPORTED_LANGUAGES]
 
 
-@router.get("/usage", response_model=PublicUsageResponse)
+@router.get(
+    "/usage",
+    response_model=PublicUsageResponse,
+    summary="Get current usage",
+    responses={401: {"model": PublicErrorDetail}},
+)
 async def public_usage(
     auth: tuple[User, ApiKey] = Depends(get_current_user_from_api_key),
     db: AsyncSession = Depends(get_db),
 ) -> PublicUsageResponse:
-    """Get current usage and remaining quota for the authenticated account."""
+    """
+    Return how many characters this account has translated in the
+    current billing period, along with the included quota and the
+    remaining balance.
+
+    Use this to surface usage in your dashboard, send your own alerts
+    before hitting overage, or decide when to throttle non-essential
+    workloads.
+    """
     user, _ = auth
 
     usage = await get_usage_status(db, user.id)
