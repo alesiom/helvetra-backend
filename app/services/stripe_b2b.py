@@ -241,3 +241,36 @@ def generate_meter_idempotency_key(user_id: uuid.UUID, characters: int) -> str:
     the same user are unique.
     """
     return f"{user_id}:{time.time_ns()}:{characters}"
+
+
+# --- Customer Portal ---
+
+
+def create_billing_portal_session(
+    customer_id: str,
+    return_url: str,
+) -> str | None:
+    """
+    Create a Stripe billing portal session and return its URL.
+
+    The portal lets B2B customers self-manage their subscription
+    (update payment method, view invoices, cancel) without us having
+    to build that UI. Returns None on configuration or API errors;
+    callers should surface a friendly message.
+    """
+    if not settings.stripe_secret_key:
+        logger.error("Stripe secret key not configured for portal session")
+        return None
+
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+    except stripe.StripeError as e:
+        logger.error(f"Stripe API error creating billing portal session: {e}")
+        return None
+
+    logger.info(f"Created billing portal session for customer {customer_id}")
+    return session.url

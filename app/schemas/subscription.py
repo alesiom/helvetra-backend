@@ -45,6 +45,22 @@ class AnonymousUsageResponse(BaseModel):
     reset_at: int
 
 
+class B2BSubscriptionResponse(BaseModel):
+    """B2B subscription details for the customer dashboard."""
+
+    has_subscription: bool
+    tier: str | None = None
+    status: str | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
+    is_trialing: bool = False
+    characters_used: int = 0
+    characters_limit: int = 0
+    characters_remaining: int = 0
+    max_chars_per_request: int = 0
+    max_api_keys: int = 0
+
+
 class AppleVerifyRequest(BaseModel):
     """Apple StoreKit transaction verification request."""
 

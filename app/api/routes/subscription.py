@@ -3,17 +3,27 @@ Subscription endpoints.
 Provides subscription status and usage information.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_client_ip, get_current_user, get_current_user_optional
 from app.core.database import get_db
 from app.core.tiers import Tier, get_tier_config
+from app.models.subscription import (
+    Subscription,
+    SubscriptionProduct,
+    SubscriptionStatus,
+    SubscriptionTier,
+)
 from app.models.user import User
 from app.schemas.subscription import (
     AnonymousUsageResponse,
     AppleVerifyRequest,
     AppleVerifyResponse,
+    B2BSubscriptionResponse,
     SubscriptionResponse,
     TierLimitsResponse,
 )
@@ -64,6 +74,51 @@ async def get_tier_limits(
         period_limit=config.period_limit,
         period_type=config.period_type,
         formality=config.formality,
+    )
+
+
+@router.get("/b2b", response_model=B2BSubscriptionResponse)
+async def get_b2b_subscription(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> B2BSubscriptionResponse:
+    """Return the authenticated user's B2B subscription details for the dashboard."""
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.user_id == user.id,
+            Subscription.product == SubscriptionProduct.B2B,
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription or subscription.status != SubscriptionStatus.ACTIVE:
+        return B2BSubscriptionResponse(has_subscription=False)
+
+    tier_enum = Tier(subscription.tier.value)
+    tier_config = get_tier_config(tier_enum, product="b2b")
+    usage = await get_usage_status(db, user.id)
+
+    # Detect trial period heuristically: Starter customers have a 14-day
+    # Stripe trial, so if the subscription was created within the last
+    # 14 days we treat the current period as the trial. This avoids an
+    # extra Stripe API call per dashboard load.
+    is_trialing = False
+    if subscription.tier == SubscriptionTier.STARTER and subscription.created_at:
+        trial_cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        is_trialing = subscription.created_at > trial_cutoff
+
+    return B2BSubscriptionResponse(
+        has_subscription=True,
+        tier=subscription.tier.value,
+        status=subscription.status.value,
+        current_period_start=subscription.current_period_start,
+        current_period_end=subscription.current_period_end,
+        is_trialing=is_trialing,
+        characters_used=usage.characters_used,
+        characters_limit=usage.characters_limit,
+        characters_remaining=max(0, usage.characters_limit - usage.characters_used),
+        max_chars_per_request=tier_config.max_chars_per_request,
+        max_api_keys=tier_config.max_api_keys,
     )
 
 
