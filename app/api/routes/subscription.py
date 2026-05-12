@@ -17,6 +17,7 @@ from app.models.subscription import (
     SubscriptionProduct,
     SubscriptionStatus,
     SubscriptionTier,
+    UsagePeriod,
 )
 from app.models.user import User
 from app.schemas.subscription import (
@@ -26,6 +27,8 @@ from app.schemas.subscription import (
     B2BSubscriptionResponse,
     SubscriptionResponse,
     TierLimitsResponse,
+    UsageHistoryPoint,
+    UsageHistoryResponse,
 )
 from app.services.subscription import get_or_create_subscription, get_usage_status
 from app.services.usage_tracker import anonymous_usage_tracker
@@ -119,6 +122,42 @@ async def get_b2b_subscription(
         characters_remaining=max(0, usage.characters_limit - usage.characters_used),
         max_chars_per_request=tier_config.max_chars_per_request,
         max_api_keys=tier_config.max_api_keys,
+    )
+
+
+@router.get("/b2b/usage-history", response_model=UsageHistoryResponse)
+async def get_b2b_usage_history(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UsageHistoryResponse:
+    """
+    Return the user's recent monthly usage periods for the dashboard chart.
+
+    Returns up to 12 most recent periods, oldest first. No daily granularity:
+    the usage_periods table aggregates monthly. Each row is independent of
+    consumer vs B2B product since usage_periods is shared per user.
+    """
+    result = await db.execute(
+        select(UsagePeriod)
+        .where(UsagePeriod.user_id == user.id)
+        .order_by(UsagePeriod.period_start.desc())
+        .limit(12)
+    )
+    rows = list(result.scalars().all())
+
+    # Reverse so the chart reads chronologically (oldest left, newest right).
+    rows.reverse()
+
+    return UsageHistoryResponse(
+        periods=[
+            UsageHistoryPoint(
+                period_start=row.period_start,
+                period_end=row.period_end,
+                characters_used=row.characters_used,
+                characters_limit=row.characters_limit,
+            )
+            for row in rows
+        ]
     )
 
 

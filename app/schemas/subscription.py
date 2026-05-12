@@ -45,6 +45,21 @@ class AnonymousUsageResponse(BaseModel):
     reset_at: int
 
 
+class UsageHistoryPoint(BaseModel):
+    """One historical usage period, used for the dashboard chart."""
+
+    period_start: datetime
+    period_end: datetime
+    characters_used: int
+    characters_limit: int
+
+
+class UsageHistoryResponse(BaseModel):
+    """Ordered list of recent usage periods (oldest → newest)."""
+
+    periods: list[UsageHistoryPoint]
+
+
 class B2BSubscriptionResponse(BaseModel):
     """B2B subscription details for the customer dashboard."""
 
