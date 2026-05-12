@@ -7,7 +7,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, String, false, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -103,6 +103,15 @@ class UsagePeriod(Base):
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     characters_used: Mapped[int] = mapped_column(BigInteger, default=0)
     characters_limit: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Per-period flags marking which B2B usage-alert emails have already
+    # been sent. New periods auto-reset to FALSE so customers get a fresh
+    # set of alerts every month.
+    alert_80_sent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
+    alert_100_sent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

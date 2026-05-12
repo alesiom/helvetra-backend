@@ -25,6 +25,7 @@ from app.services.stripe_b2b import (
 )
 from app.services.subscription import get_or_create_subscription, get_usage_status, record_usage
 from app.services.translation import translate_text
+from app.services.usage_alerts import maybe_send_usage_alerts
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -331,6 +332,13 @@ async def public_translate(
                 idempotency_key=generate_meter_idempotency_key(user.id, text_length),
             )
         )
+
+        # Fire usage-alert emails for newly-crossed thresholds. The
+        # helper is fast in the common case (no thresholds crossed →
+        # one indexed read + early return); only the rare crossing
+        # translation pays the SMTP cost. Errors are swallowed inside
+        # the helper so they cannot block the API response.
+        await maybe_send_usage_alerts(db, user, SubscriptionProduct.B2B)
 
         return PublicTranslateResponse(
             translation=result.translation,

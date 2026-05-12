@@ -207,3 +207,90 @@ class TestTrialEndingEmailTemplate:
             with patch.object(settings, "smtp_password", ""):
                 result = email_service.send_b2b_trial_ending_email("test@example.com")
                 assert result is False
+
+
+class TestUsageAlertThresholds:
+    """The _crossed_thresholds helper drives all usage-alert dispatch."""
+
+    def _period(self, used: int, limit: int, sent_80: bool = False, sent_100: bool = False):
+        """Build a minimal UsagePeriod-like object for threshold tests."""
+        class _Stub:
+            pass
+        p = _Stub()
+        p.characters_used = used
+        p.characters_limit = limit
+        p.alert_80_sent = sent_80
+        p.alert_100_sent = sent_100
+        return p
+
+    def test_under_eighty_percent_returns_nothing(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        assert _crossed_thresholds(self._period(used=100_000, limit=500_000)) == []
+
+    def test_exactly_eighty_percent_fires_eighty_only(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        result = _crossed_thresholds(self._period(used=400_000, limit=500_000))
+        assert [t.percent for t in result] == [80]
+
+    def test_exactly_full_quota_fires_both(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        result = _crossed_thresholds(self._period(used=500_000, limit=500_000))
+        assert [t.percent for t in result] == [80, 100]
+
+    def test_over_quota_fires_both(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        result = _crossed_thresholds(self._period(used=600_000, limit=500_000))
+        assert [t.percent for t in result] == [80, 100]
+
+    def test_eighty_already_sent_only_returns_hundred(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        result = _crossed_thresholds(
+            self._period(used=500_000, limit=500_000, sent_80=True)
+        )
+        assert [t.percent for t in result] == [100]
+
+    def test_both_already_sent_returns_nothing(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        result = _crossed_thresholds(
+            self._period(used=600_000, limit=500_000, sent_80=True, sent_100=True)
+        )
+        assert result == []
+
+    def test_zero_limit_does_not_divide_by_zero(self):
+        from app.services.usage_alerts import _crossed_thresholds
+
+        # Defensive: a misconfigured period must not crash dispatch
+        assert _crossed_thresholds(self._period(used=100, limit=0)) == []
+
+
+class TestUsageAlertEmailMethod:
+    """The send_b2b_usage_alert_email method must accept only valid thresholds."""
+
+    def test_invalid_threshold_raises(self):
+        import pytest
+        from app.services.email import email_service
+
+        with pytest.raises(ValueError, match="Unsupported usage-alert threshold"):
+            email_service.send_b2b_usage_alert_email("a@example.com", threshold=42)
+
+    def test_eighty_renders_in_all_locales(self):
+        from app.services.email import TRANSLATIONS, SUPPORTED_LOCALES
+
+        for loc in SUPPORTED_LOCALES:
+            t = TRANSLATIONS["b2b_usage_80"][loc]
+            assert t["subject"]
+            assert t["body"]
+
+    def test_hundred_renders_in_all_locales(self):
+        from app.services.email import TRANSLATIONS, SUPPORTED_LOCALES
+
+        for loc in SUPPORTED_LOCALES:
+            t = TRANSLATIONS["b2b_usage_100"][loc]
+            assert t["subject"]
+            assert t["body"]

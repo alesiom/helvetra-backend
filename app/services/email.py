@@ -143,6 +143,154 @@ TRANSLATIONS = {
             "ignore": "Domande? Rispondi semplicemente a questa e-mail.",
         },
     },
+    "b2b_usage_80": {
+        "en": {
+            "subject": "You've used 80% of your Helvetra API quota",
+            "intro": "Hi,",
+            "body": (
+                "Heads up — you've used 80% of your included characters "
+                "for this billing period. Nothing changes yet; this is "
+                "just so you can plan ahead."
+            ),
+            "button": "Check usage in the dashboard",
+            "link_text": "Or open this link in your browser:",
+            "manage": (
+                "Need more headroom? You can upgrade to a higher tier "
+                "from the dashboard under \"Manage billing\"."
+            ),
+            "ignore": "Questions? Just reply to this email.",
+        },
+        "de": {
+            "subject": "Sie haben 80% Ihres Helvetra-API-Kontingents genutzt",
+            "intro": "Hallo,",
+            "body": (
+                "Kurzer Hinweis — Sie haben 80% Ihrer inklusive Zeichen "
+                "in dieser Abrechnungsperiode genutzt. Es ändert sich "
+                "noch nichts; das ist nur zur Planung."
+            ),
+            "button": "Verbrauch im Dashboard ansehen",
+            "link_text": "Oder öffnen Sie diesen Link im Browser:",
+            "manage": (
+                "Brauchen Sie mehr Spielraum? Im Dashboard unter "
+                "\"Abrechnung verwalten\" können Sie auf einen "
+                "höheren Tarif wechseln."
+            ),
+            "ignore": "Fragen? Antworten Sie einfach auf diese E-Mail.",
+        },
+        "fr": {
+            "subject": "Vous avez utilisé 80 % de votre quota d'API Helvetra",
+            "intro": "Bonjour,",
+            "body": (
+                "Petit message — vous avez utilisé 80 % des caractères "
+                "inclus pour cette période de facturation. Rien ne "
+                "change pour l'instant ; c'est juste pour anticiper."
+            ),
+            "button": "Voir l'utilisation dans le tableau de bord",
+            "link_text": "Ou ouvrez ce lien dans votre navigateur :",
+            "manage": (
+                "Besoin de plus de marge ? Vous pouvez passer à une "
+                "offre supérieure depuis le tableau de bord, sous "
+                "« Gérer la facturation »."
+            ),
+            "ignore": "Des questions ? Répondez simplement à cet e-mail.",
+        },
+        "it": {
+            "subject": "Hai usato l'80% del tuo quota API Helvetra",
+            "intro": "Ciao,",
+            "body": (
+                "Un avviso — hai usato l'80% dei caratteri inclusi per "
+                "questo periodo di fatturazione. Per ora non cambia "
+                "nulla; è solo per pianificare."
+            ),
+            "button": "Vedi l'utilizzo nella dashboard",
+            "link_text": "Oppure apri questo link nel browser:",
+            "manage": (
+                "Hai bisogno di più margine? Puoi passare a un piano "
+                "superiore dalla dashboard sotto \"Gestisci "
+                "fatturazione\"."
+            ),
+            "ignore": "Domande? Rispondi semplicemente a questa e-mail.",
+        },
+    },
+    "b2b_usage_100": {
+        "en": {
+            "subject": "You've reached your Helvetra API quota",
+            "intro": "Hi,",
+            "body": (
+                "You've used 100% of the characters included in your "
+                "current billing period. Further translation requests "
+                "will be rejected until the next period starts. Upgrade "
+                "anytime from the dashboard to get more capacity."
+            ),
+            "button": "Manage your plan",
+            "link_text": "Or open this link in your browser:",
+            "manage": (
+                "On Starter you can move to Business for a much higher "
+                "included quota (2,000,000 characters) and a lower "
+                "per-character overage rate."
+            ),
+            "ignore": "Questions? Just reply to this email.",
+        },
+        "de": {
+            "subject": "Sie haben Ihr Helvetra-API-Kontingent erreicht",
+            "intro": "Hallo,",
+            "body": (
+                "Sie haben 100% der inklusive Zeichen in Ihrer aktuellen "
+                "Abrechnungsperiode genutzt. Weitere Übersetzungs-"
+                "Anfragen werden bis zum Beginn der nächsten Periode "
+                "abgelehnt. Sie können im Dashboard jederzeit auf einen "
+                "höheren Tarif wechseln."
+            ),
+            "button": "Tarif verwalten",
+            "link_text": "Oder öffnen Sie diesen Link im Browser:",
+            "manage": (
+                "Auf Starter können Sie auf Business wechseln und "
+                "erhalten ein deutlich höheres Inklusiv-Kontingent "
+                "(2'000'000 Zeichen) und einen tieferen Verbrauchs-"
+                "Tarif pro Zeichen."
+            ),
+            "ignore": "Fragen? Antworten Sie einfach auf diese E-Mail.",
+        },
+        "fr": {
+            "subject": "Vous avez atteint votre quota d'API Helvetra",
+            "intro": "Bonjour,",
+            "body": (
+                "Vous avez utilisé 100 % des caractères inclus dans "
+                "votre période de facturation actuelle. Les requêtes "
+                "supplémentaires seront rejetées jusqu'au début de la "
+                "prochaine période. Vous pouvez passer à une offre "
+                "supérieure depuis le tableau de bord à tout moment."
+            ),
+            "button": "Gérer votre offre",
+            "link_text": "Ou ouvrez ce lien dans votre navigateur :",
+            "manage": (
+                "Sur Starter vous pouvez passer à Business pour un "
+                "quota inclus bien plus élevé (2 000 000 caractères) "
+                "et un tarif au caractère plus avantageux pour le "
+                "dépassement."
+            ),
+            "ignore": "Des questions ? Répondez simplement à cet e-mail.",
+        },
+        "it": {
+            "subject": "Hai raggiunto il tuo quota API Helvetra",
+            "intro": "Ciao,",
+            "body": (
+                "Hai usato il 100% dei caratteri inclusi nel periodo "
+                "di fatturazione corrente. Le ulteriori richieste di "
+                "traduzione saranno rifiutate fino all'inizio del "
+                "prossimo periodo. Puoi passare a un piano superiore "
+                "dalla dashboard in qualsiasi momento."
+            ),
+            "button": "Gestisci il piano",
+            "link_text": "Oppure apri questo link nel browser:",
+            "manage": (
+                "Su Starter puoi passare a Business per un quota "
+                "inclusa molto più alta (2.000.000 caratteri) e una "
+                "tariffa per carattere più bassa per l'eccedenza."
+            ),
+            "ignore": "Domande? Rispondi semplicemente a questa e-mail.",
+        },
+    },
     "password_reset": {
         "en": {
             "subject": "Reset your Helvetra password",
@@ -411,6 +559,44 @@ class EmailService:
         """
         dashboard_url = "https://helvetra.ch/developers/dashboard"
         t = get_translation("b2b_trial_ending", locale)
+
+        html_content = self._build_html_template(
+            welcome_or_intro=t["intro"],
+            body=t["body"],
+            button_text=t["button"],
+            button_url=dashboard_url,
+            link_text=t["link_text"],
+            expires=t["manage"],
+            ignore=t["ignore"],
+        )
+
+        text_content = self._build_text_template(
+            welcome_or_intro=t["intro"],
+            body=t["body"],
+            button_url=dashboard_url,
+            expires=t["manage"],
+            ignore=t["ignore"],
+        )
+
+        return self.send_email(to_email, t["subject"], html_content, text_content)
+
+    def send_b2b_usage_alert_email(
+        self,
+        to_email: str,
+        threshold: int,
+        locale: str | None = None,
+    ) -> bool:
+        """
+        Notify a B2B customer that their character usage has crossed a
+        threshold (80 or 100 percent) of the included quota for the
+        current billing period. Fires at most once per threshold per
+        period thanks to the alert_*_sent flags on usage_periods.
+        """
+        if threshold not in (80, 100):
+            raise ValueError(f"Unsupported usage-alert threshold: {threshold}")
+
+        dashboard_url = "https://helvetra.ch/developers/dashboard"
+        t = get_translation(f"b2b_usage_{threshold}", locale)
 
         html_content = self._build_html_template(
             welcome_or_intro=t["intro"],
