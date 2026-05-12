@@ -226,15 +226,40 @@ async def _handle_checkout_completed(
 
 async def _handle_trial_will_end(db: AsyncSession, event_data: Any) -> bool:
     """
-    Log trial-ending events. Email reminders to the customer will be
-    wired up alongside the B2B dashboard work (see helvetra/frontend#11);
-    Stripe also sends its own reminder by default.
+    Email the customer that their B2B trial ends in ~3 days so they
+    can upgrade, cancel, or do nothing as they prefer. The webhook
+    layer already deduplicates events by event_id, so we'll only
+    send once per Stripe event delivery.
     """
     stripe_sub = event_data.object
+    customer_id = getattr(stripe_sub, "customer", None)
+    sub_id = getattr(stripe_sub, "id", "<unknown>")
+
+    if not customer_id:
+        logger.warning(f"trial_will_end event has no customer for sub {sub_id}")
+        return True
+
+    result = await db.execute(
+        select(User).where(User.stripe_customer_id == customer_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        logger.warning(
+            f"trial_will_end: no user found for Stripe customer {customer_id}"
+        )
+        return True
+
+    # Import lazily to avoid pulling the SMTP service into module-import
+    # time during webhook handler registration.
+    from app.services.email import email_service
+
+    sent = email_service.send_b2b_trial_ending_email(user.email)
     logger.info(
-        "Stripe trial_will_end event for subscription %s (customer %s)",
-        getattr(stripe_sub, "id", "<unknown>"),
-        getattr(stripe_sub, "customer", "<unknown>"),
+        "Stripe trial_will_end: emailed user %s (sub %s) → %s",
+        user.id,
+        sub_id,
+        "ok" if sent else "skipped (SMTP not configured or send failed)",
     )
     return True
 

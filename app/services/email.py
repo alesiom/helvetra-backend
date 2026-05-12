@@ -70,6 +70,79 @@ TRANSLATIONS = {
             "ignore": "Se non hai creato un account Helvetra, puoi ignorare questa e-mail.",
         },
     },
+    "b2b_trial_ending": {
+        "en": {
+            "subject": "Your Helvetra API trial ends soon",
+            "intro": "Hi,",
+            "body": (
+                "Your Helvetra B2B API trial ends in 3 days. After that, "
+                "your card will be charged for the first month of Starter "
+                "(CHF 29). Keep using the API as normal — nothing to do."
+            ),
+            "button": "Open your dashboard",
+            "link_text": "Or open this link in your browser:",
+            "manage": (
+                "Want to change your plan or stop the trial? You can do "
+                "either from the developer dashboard under \"Manage "
+                "billing\"."
+            ),
+            "ignore": "Questions? Just reply to this email.",
+        },
+        "de": {
+            "subject": "Ihre Helvetra-API-Testphase endet bald",
+            "intro": "Hallo,",
+            "body": (
+                "Ihre Helvetra-B2B-API-Testphase endet in 3 Tagen. "
+                "Danach wird Ihre Karte für den ersten Monat Starter "
+                "(CHF 29) belastet. Nutzen Sie die API einfach weiter — "
+                "es ist nichts zu tun."
+            ),
+            "button": "Zum Dashboard",
+            "link_text": "Oder öffnen Sie diesen Link im Browser:",
+            "manage": (
+                "Möchten Sie Ihren Tarif ändern oder die Testphase "
+                "beenden? Beides geht im Entwickler-Dashboard unter "
+                "\"Abrechnung verwalten\"."
+            ),
+            "ignore": "Fragen? Antworten Sie einfach auf diese E-Mail.",
+        },
+        "fr": {
+            "subject": "Votre essai de l'API Helvetra se termine bientôt",
+            "intro": "Bonjour,",
+            "body": (
+                "Votre essai de l'API B2B Helvetra se termine dans "
+                "3 jours. Votre carte sera ensuite débitée du premier "
+                "mois de Starter (CHF 29). Continuez à utiliser l'API "
+                "normalement — rien à faire."
+            ),
+            "button": "Ouvrir le tableau de bord",
+            "link_text": "Ou ouvrez ce lien dans votre navigateur :",
+            "manage": (
+                "Vous voulez changer d'offre ou arrêter l'essai ? Vous "
+                "pouvez faire les deux depuis le tableau de bord "
+                "développeur, sous « Gérer la facturation »."
+            ),
+            "ignore": "Des questions ? Répondez simplement à cet e-mail.",
+        },
+        "it": {
+            "subject": "La tua prova dell'API Helvetra termina presto",
+            "intro": "Ciao,",
+            "body": (
+                "La tua prova dell'API B2B Helvetra termina tra 3 giorni. "
+                "Dopo, la tua carta sarà addebitata per il primo mese di "
+                "Starter (CHF 29). Continua a usare l'API normalmente — "
+                "non c'è nulla da fare."
+            ),
+            "button": "Apri la dashboard",
+            "link_text": "Oppure apri questo link nel browser:",
+            "manage": (
+                "Vuoi cambiare piano o interrompere la prova? Puoi fare "
+                "entrambe le cose dalla dashboard sviluppatori sotto "
+                "\"Gestisci fatturazione\"."
+            ),
+            "ignore": "Domande? Rispondi semplicemente a questa e-mail.",
+        },
+    },
     "password_reset": {
         "en": {
             "subject": "Reset your Helvetra password",
@@ -322,6 +395,38 @@ class EmailService:
             body=t["body"],
             button_url=verification_url,
             expires=t["expires"].format(hours=settings.email_verification_expire_hours),
+            ignore=t["ignore"],
+        )
+
+        return self.send_email(to_email, t["subject"], html_content, text_content)
+
+    def send_b2b_trial_ending_email(
+        self, to_email: str, locale: str | None = None
+    ) -> bool:
+        """
+        Notify a B2B customer that their 14-day Starter trial ends in
+        ~3 days, so they can upgrade, cancel, or do nothing as they prefer.
+        Triggered by the Stripe customer.subscription.trial_will_end
+        webhook event.
+        """
+        dashboard_url = "https://helvetra.ch/developers/dashboard"
+        t = get_translation("b2b_trial_ending", locale)
+
+        html_content = self._build_html_template(
+            welcome_or_intro=t["intro"],
+            body=t["body"],
+            button_text=t["button"],
+            button_url=dashboard_url,
+            link_text=t["link_text"],
+            expires=t["manage"],
+            ignore=t["ignore"],
+        )
+
+        text_content = self._build_text_template(
+            welcome_or_intro=t["intro"],
+            body=t["body"],
+            button_url=dashboard_url,
+            expires=t["manage"],
             ignore=t["ignore"],
         )
 

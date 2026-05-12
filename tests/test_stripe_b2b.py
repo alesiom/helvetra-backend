@@ -165,3 +165,45 @@ class TestMeterIdempotencyKey:
         key = stripe_b2b.generate_meter_idempotency_key(user_id, 250)
         assert str(user_id) in key
         assert ":250" in key
+
+
+class TestTrialEndingEmailTemplate:
+    """The trial-ending email must render correctly in every supported locale."""
+
+    def test_translation_exists_in_each_locale(self):
+        from app.services.email import TRANSLATIONS, SUPPORTED_LOCALES
+
+        assert "b2b_trial_ending" in TRANSLATIONS
+        for loc in SUPPORTED_LOCALES:
+            t = TRANSLATIONS["b2b_trial_ending"][loc]
+            assert t["subject"]
+            assert t["intro"]
+            assert t["body"]
+            assert t["button"]
+
+    def test_html_renders_with_dashboard_url(self):
+        from app.services.email import email_service, get_translation
+
+        t = get_translation("b2b_trial_ending", "en")
+        html = email_service._build_html_template(
+            welcome_or_intro=t["intro"],
+            body=t["body"],
+            button_text=t["button"],
+            button_url="https://helvetra.ch/developers/dashboard",
+            link_text=t["link_text"],
+            expires=t["manage"],
+            ignore=t["ignore"],
+        )
+        assert "helvetra.ch/developers/dashboard" in html
+        assert t["subject"] not in html  # subject is set on the envelope, not body
+        assert t["body"] in html
+
+    def test_send_returns_false_when_smtp_unconfigured(self):
+        """When SMTP credentials are blank, the method must fail soft."""
+        from unittest.mock import patch
+        from app.services.email import email_service, settings
+
+        with patch.object(settings, "smtp_user", ""):
+            with patch.object(settings, "smtp_password", ""):
+                result = email_service.send_b2b_trial_ending_email("test@example.com")
+                assert result is False
