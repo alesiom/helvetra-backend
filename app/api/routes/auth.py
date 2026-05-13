@@ -486,7 +486,6 @@ async def delete_account(
     Cancels any active subscription before deletion.
     """
     from app.models.subscription import SubscriptionSource, SubscriptionStatus
-    from app.services.payrexx import cancel_subscription as cancel_payrexx_subscription
     from app.services.stripe_service import cancel_stripe_subscription
 
     client_ip = get_client_ip(http_request)
@@ -497,11 +496,11 @@ async def delete_account(
 
     subscription = await get_or_create_subscription(db, current_user.id)
 
-    # Cancel active subscription with the appropriate provider
+    # Cancel active subscription on the relevant provider. Legacy
+    # PAYREXX rows (status set to CANCELLED in the 2026-05-13 cleanup)
+    # are skipped; no new ones can be created.
     if subscription.status == SubscriptionStatus.ACTIVE and subscription.external_id:
-        if subscription.source == SubscriptionSource.PAYREXX:
-            await cancel_payrexx_subscription(subscription.external_id)
-        elif subscription.source == SubscriptionSource.STRIPE:
+        if subscription.source == SubscriptionSource.STRIPE:
             await cancel_stripe_subscription(subscription.external_id)
 
     # Log the deletion event before deleting

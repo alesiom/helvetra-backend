@@ -45,12 +45,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
 
-    # Payrexx (payments)
-    payrexx_instance: str = ""
-    payrexx_api_secret: str = ""
-    payrexx_product_pro_id: str = ""
-    payrexx_product_business_id: str = ""
-
     # Stripe (payments)
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""

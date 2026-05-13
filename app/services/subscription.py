@@ -131,7 +131,9 @@ async def get_usage_status(db: AsyncSession, user_id: uuid.UUID) -> UsageStatus:
     remaining_in_period = period.characters_limit - period.characters_used
     can_translate = remaining_in_period > 0 or credits > 0
 
-    # Use subscription billing dates if available (from Payrexx), otherwise usage period dates
+    # Use subscription billing dates if available (e.g. Stripe sets them
+    # on checkout/invoice events), otherwise fall back to the rolling
+    # monthly usage-period dates.
     billing_start = subscription.current_period_start or period.period_start
     billing_end = subscription.current_period_end or period.period_end
 
