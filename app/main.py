@@ -24,6 +24,16 @@ from app.core.middleware import RateLimitMiddleware
 
 settings = get_settings()
 
+# Refuse to boot with a weak or missing JWT secret. Without this check the
+# config default of "" silently signs every access token with the empty
+# string, letting anyone forge tokens for any user.
+_MIN_JWT_SECRET_LEN = 32
+if len(settings.jwt_secret_key) < _MIN_JWT_SECRET_LEN:
+    raise RuntimeError(
+        f"JWT_SECRET_KEY must be set and at least {_MIN_JWT_SECRET_LEN} bytes. "
+        "Generate one with: openssl rand -base64 48"
+    )
+
 app = FastAPI(
     title="Helvetra API",
     description="Swiss translation API",
