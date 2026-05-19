@@ -16,6 +16,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     locale: str | None = Field(default=None, description="User's preferred language (en, de, fr, it)")
+    use_cookie: bool = Field(
+        default=False, description="Store refresh token in HttpOnly cookie instead of body"
+    )
 
     @field_validator("password")
     @classmethod

@@ -47,6 +47,7 @@ def get_user_agent(request: Request) -> str | None:
 async def register(
     request: RegisterRequest,
     http_request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:
     """Register a new user with email and password."""
@@ -111,15 +112,39 @@ async def register(
     log_auth_event(AuthEvent.REGISTER_SUCCESS, client_ip, request.email, user_agent)
 
     # New users always start on free tier
+    user_payload = UserResponse(
+        id=user.id,
+        email=user.email,
+        email_verified=user.email_verified,
+        tier="free",
+    ).model_dump()
+
+    if request.use_cookie:
+        response.set_cookie(
+            key="refresh_token",
+            value=raw_refresh,
+            httponly=True,
+            secure=not settings.debug,
+            samesite="strict",
+            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            path="/api/v1/auth",
+        )
+        return AuthResponse(
+            success=True,
+            data={
+                "user": user_payload,
+                "tokens": TokenResponse(
+                    access_token=access_token,
+                    refresh_token="",  # stored in cookie
+                    expires_in=settings.access_token_expire_minutes * 60,
+                ).model_dump(),
+            },
+        )
+
     return AuthResponse(
         success=True,
         data={
-            "user": UserResponse(
-                id=user.id,
-                email=user.email,
-                email_verified=user.email_verified,
-                tier="free",
-            ).model_dump(),
+            "user": user_payload,
             "tokens": TokenResponse(
                 access_token=access_token,
                 refresh_token=raw_refresh,
