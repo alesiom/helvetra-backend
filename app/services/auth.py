@@ -12,7 +12,8 @@ from pathlib import Path
 from uuid import UUID
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from app.config import get_settings
 
@@ -96,7 +97,7 @@ def decode_access_token(token: str) -> UUID | None:
         if user_id is None:
             return None
         return UUID(user_id)
-    except JWTError:
+    except PyJWTError:
         return None
 
 

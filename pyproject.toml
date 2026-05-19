@@ -16,6 +16,10 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "alembic>=1.12.0",
     "bcrypt>=4.0.0",
+    "pyjwt[crypto]>=2.8.0",
+    # Kept until app/services/apple_storekit.py is rewritten against
+    # app-store-server-library (helvetra/backend#94). All other uses
+    # have moved to PyJWT.
     "python-jose[cryptography]>=3.3.0",
     "email-validator>=2.0.0",
     "langdetect>=1.0.9",

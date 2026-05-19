@@ -8,8 +8,15 @@ import time
 from dataclasses import dataclass
 
 import httpx
-from jose import JWTError, jwt
-from jose.exceptions import JWKError
+import jwt
+from jwt import (
+    ExpiredSignatureError,
+    InvalidAudienceError,
+    InvalidIssuerError,
+    InvalidTokenError,
+    PyJWKClient,
+    PyJWTError,
+)
 
 from app.config import get_settings
 
@@ -55,17 +62,19 @@ async def _fetch_apple_keys() -> dict | None:
         return _apple_keys  # Return cached keys if available
 
 
-def _get_key_for_token(keys: dict, token: str) -> dict | None:
-    """Find the correct key from JWKS based on token header."""
+def _get_signing_key(token: str) -> object | None:
+    """Pull the RSA public key for an Apple identity token via PyJWKClient."""
     try:
-        unverified_header = jwt.get_unverified_header(token)
-        kid = unverified_header.get("kid")
-
-        for key in keys.get("keys", []):
-            if key.get("kid") == kid:
-                return key
+        # PyJWKClient handles its own JWKS fetch + cache (24h default).
+        # We keep the _fetch_apple_keys helper around for `refresh_apple_keys`
+        # which is exposed for ops use.
+        jwk_client = PyJWKClient(APPLE_KEYS_URL, cache_keys=True)
+        return jwk_client.get_signing_key_from_jwt(token).key
+    except PyJWTError as e:
+        logger.warning(f"Apple identity token: no signing key match ({e})")
         return None
-    except JWTError:
+    except Exception as e:
+        logger.warning(f"Apple identity token: JWKS lookup failed ({e})")
         return None
 
 
@@ -74,32 +83,20 @@ async def validate_identity_token(identity_token: str) -> AppleUser | None:
     Validate an Apple Sign-In identity token (JWT).
     Returns AppleUser if valid, None if invalid.
     """
-    # Fetch Apple's public keys
-    keys = await _fetch_apple_keys()
-    if not keys:
-        logger.error("Cannot validate token: no Apple keys available")
-        return None
-
-    # Find the correct key for this token
-    key = _get_key_for_token(keys, identity_token)
-    if not key:
-        logger.warning("No matching key found for Apple identity token")
+    key = _get_signing_key(identity_token)
+    if key is None:
         return None
 
     try:
-        # Decode and validate the token
+        # Decode and validate the token. PyJWT enforces exp/aud/iss when the
+        # corresponding kwargs are passed; no need for an explicit options
+        # dict like with python-jose.
         payload = jwt.decode(
             identity_token,
             key,
             algorithms=["RS256"],
             audience=settings.apple_bundle_id,
             issuer="https://appleid.apple.com",
-            options={
-                "verify_exp": True,
-                "verify_iat": True,
-                "verify_aud": True,
-                "verify_iss": True,
-            },
         )
 
         # Extract user info from claims
@@ -125,13 +122,13 @@ async def validate_identity_token(identity_token: str) -> AppleUser | None:
             is_private_email=bool(is_private_email),
         )
 
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         logger.warning("Apple identity token expired")
         return None
-    except jwt.JWTClaimsError as e:
+    except (InvalidAudienceError, InvalidIssuerError) as e:
         logger.warning(f"Apple identity token claims error: {e}")
         return None
-    except (JWTError, JWKError) as e:
+    except (InvalidTokenError, PyJWTError) as e:
         logger.warning(f"Failed to validate Apple identity token: {e}")
         return None
     except Exception as e:
