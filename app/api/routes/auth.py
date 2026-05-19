@@ -33,6 +33,12 @@ from app.services.auth import (
     verify_password,
 )
 from app.services.auth_rate_limiter import auth_rate_limiter
+from app.services.csrf import (
+    clear_csrf_cookie,
+    issue_csrf_token,
+    require_csrf,
+    set_csrf_cookie,
+)
 
 settings = get_settings()
 router = APIRouter(prefix="/auth")
@@ -120,15 +126,17 @@ async def register(
     ).model_dump()
 
     if request.use_cookie:
+        max_age = settings.refresh_token_expire_days * 24 * 60 * 60
         response.set_cookie(
             key="refresh_token",
             value=raw_refresh,
             httponly=True,
             secure=not settings.debug,
             samesite="strict",
-            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            max_age=max_age,
             path="/api/v1/auth",
         )
+        set_csrf_cookie(response, issue_csrf_token(), max_age)
         return AuthResponse(
             success=True,
             data={
@@ -252,15 +260,17 @@ async def login(
 
     # Set refresh token as HttpOnly cookie if requested
     if request.use_cookie:
+        max_age = settings.refresh_token_expire_days * 24 * 60 * 60
         response.set_cookie(
             key="refresh_token",
             value=raw_refresh,
             httponly=True,
             secure=not settings.debug,  # Secure in production
             samesite="strict",
-            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            max_age=max_age,
             path="/api/v1/auth",
         )
+        set_csrf_cookie(response, issue_csrf_token(), max_age)
         # Don't include refresh token in response body when using cookies
         return AuthResponse(
             success=True,
@@ -303,6 +313,7 @@ async def refresh(
     response: Response = None,
     refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_csrf),
 ) -> AuthResponse:
     """Exchange a refresh token for new access and refresh tokens."""
     # Accept token from cookie or request body
@@ -363,15 +374,17 @@ async def refresh(
 
     # If refresh token came from cookie, update cookie with new token
     if refresh_token_cookie:
+        max_age = settings.refresh_token_expire_days * 24 * 60 * 60
         response.set_cookie(
             key="refresh_token",
             value=raw_refresh,
             httponly=True,
             secure=not settings.debug,
             samesite="strict",
-            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            max_age=max_age,
             path="/api/v1/auth",
         )
+        set_csrf_cookie(response, issue_csrf_token(), max_age)
         return AuthResponse(
             success=True,
             data={
@@ -401,6 +414,7 @@ async def logout(
     response: Response = None,
     refresh_token_cookie: str | None = Cookie(default=None, alias="refresh_token"),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_csrf),
 ) -> MessageResponse:
     """Revoke a refresh token to log out."""
     # Accept token from cookie or request body
@@ -414,9 +428,10 @@ async def logout(
         if stored_token:
             stored_token.revoked = True
 
-    # Clear the refresh token cookie if it was set
+    # Clear the refresh + csrf cookies if they were set
     if refresh_token_cookie:
         response.delete_cookie(key="refresh_token", path="/api/v1/auth")
+        clear_csrf_cookie(response)
 
     return MessageResponse(success=True, message="Logged out successfully")
 
@@ -505,6 +520,7 @@ async def delete_account(
     response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_csrf),
 ) -> MessageResponse:
     """
     Delete user account and all associated data.
@@ -622,15 +638,17 @@ async def apple_sign_in(
 
     # Set refresh token as HttpOnly cookie if requested
     if request.use_cookie:
+        max_age = settings.refresh_token_expire_days * 24 * 60 * 60
         response.set_cookie(
             key="refresh_token",
             value=raw_refresh,
             httponly=True,
             secure=not settings.debug,
             samesite="strict",
-            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            max_age=max_age,
             path="/api/v1/auth",
         )
+        set_csrf_cookie(response, issue_csrf_token(), max_age)
         return AuthResponse(
             success=True,
             data={
