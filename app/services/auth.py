@@ -4,7 +4,6 @@ Handles password hashing, JWT token creation, and token verification.
 """
 
 import hashlib
-import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -43,18 +42,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """
-    Verify a password against its hash using timing-safe comparison.
-    bcrypt.checkpw is already timing-safe, but we add an extra layer.
-    """
+    """Verify a password against its hash. bcrypt.checkpw is constant-time."""
     try:
-        result = bcrypt.checkpw(password.encode(), password_hash.encode())
-        # Use hmac.compare_digest for the final boolean comparison
-        # This prevents timing attacks on the result itself
-        return hmac.compare_digest(str(result), str(True))
+        return bcrypt.checkpw(password.encode(), password_hash.encode())
     except Exception:
-        # On any error, return False in constant time
-        hmac.compare_digest("a", "b")
         return False
 
 

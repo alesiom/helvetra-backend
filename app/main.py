@@ -24,14 +24,34 @@ from app.core.middleware import RateLimitMiddleware
 
 settings = get_settings()
 
-# Refuse to boot with a weak or missing JWT secret. Without this check the
-# config default of "" silently signs every access token with the empty
-# string, letting anyone forge tokens for any user.
-_MIN_JWT_SECRET_LEN = 32
-if len(settings.jwt_secret_key) < _MIN_JWT_SECRET_LEN:
-    raise RuntimeError(
-        f"JWT_SECRET_KEY must be set and at least {_MIN_JWT_SECRET_LEN} bytes. "
-        "Generate one with: openssl rand -base64 48"
+# Refuse to boot with weak or missing production secrets. Catching these at
+# module import (before FastAPI is constructed) means a misconfigured deploy
+# fails fast in the container logs instead of producing 500s at request time
+# or — worse — silently accepting empty defaults. See helvetra/backend#93, #98.
+_MIN_SECRET_LEN = 32
+
+
+def _require_secret(name: str, value: str, min_len: int = _MIN_SECRET_LEN) -> None:
+    if len(value) < min_len:
+        raise RuntimeError(
+            f"{name} must be set and at least {min_len} bytes. "
+            "Generate one with: openssl rand -base64 48"
+        )
+
+
+_require_secret("JWT_SECRET_KEY", settings.jwt_secret_key)
+
+# Production-only checks. In debug mode (local dev) we keep these optional
+# so the app boots without a full secret kit. The deploy env sets DEBUG=false.
+if not settings.debug:
+    _require_secret("ENCRYPTION_KEY", settings.encryption_key)
+    _require_secret("STRIPE_SECRET_KEY", settings.stripe_secret_key, min_len=20)
+    _require_secret("STRIPE_WEBHOOK_SECRET", settings.stripe_webhook_secret, min_len=20)
+    _require_secret(
+        "STRIPE_B2B_STARTER_BASE_LOOKUP", settings.stripe_b2b_starter_base_lookup, min_len=4
+    )
+    _require_secret(
+        "STRIPE_B2B_BUSINESS_BASE_LOOKUP", settings.stripe_b2b_business_base_lookup, min_len=4
     )
 
 app = FastAPI(
@@ -47,8 +67,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    # DELETE is required for /api/v1/auth/account and /api/v1/api-keys/{id}.
+    allow_methods=["GET", "POST", "DELETE"],
+    # Pinned to the headers the web client actually sends. `*` plus
+    # allow_credentials=True is a footgun if origins ever widen.
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-API-Key"],
 )
 app.add_middleware(RateLimitMiddleware)
 

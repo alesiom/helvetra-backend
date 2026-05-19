@@ -298,8 +298,9 @@ async def public_translate(
             },
         )
 
-    # Check period usage
-    usage_status = await record_usage(db, user.id, text_length)
+    # Read-only usage check up front (no DB writes) — refusing here means
+    # we don't waste an Apertus call on a request we wouldn't bill anyway.
+    usage_status = await get_usage_status(db, user.id)
     if not usage_status.can_translate:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -312,6 +313,9 @@ async def public_translate(
         )
 
     try:
+        # Translate FIRST. If Apertus fails the exception unwinds and the
+        # outer get_db() rolls back the (empty) transaction — no usage is
+        # billed for a failed request. See helvetra/backend#103.
         result = await translate_text(
             text=request.text,
             source_lang=request.source_lang,
@@ -319,6 +323,9 @@ async def public_translate(
             formality=request.formality,
             dialect=request.dialect,
         )
+
+        # Only record usage and meter the customer for a successful response.
+        usage_status = await record_usage(db, user.id, text_length)
 
         await db.commit()
 
