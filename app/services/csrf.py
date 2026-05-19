@@ -23,7 +23,14 @@ settings = get_settings()
 
 CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
-CSRF_COOKIE_PATH = "/api/v1/auth"
+# csrf_token cookie is scoped to "/" rather than "/api/v1/auth" because
+# document.cookie only exposes cookies whose Path is a prefix of the
+# current page's URL. The frontend reads this cookie from "/" (or any
+# locale-prefixed route) to populate the X-CSRF-Token header on the
+# silent /refresh call during page load. The cookie value itself is not
+# sensitive — it's a random nonce, useless without the matching
+# HttpOnly refresh_token cookie which stays scoped to /api/v1/auth.
+CSRF_COOKIE_PATH = "/"
 
 
 def issue_csrf_token() -> str:
@@ -33,6 +40,12 @@ def issue_csrf_token() -> str:
 
 def set_csrf_cookie(response: Response, token: str, max_age_seconds: int) -> None:
     """Attach the csrf_token cookie to a response (must be JS-readable)."""
+    # Belt-and-braces: nuke any legacy /api/v1/auth-scoped csrf_token from
+    # an earlier deploy. Two cookies of the same name but different paths
+    # are separate identities in browser cookie storage; the old one was
+    # shadowing the new one on /refresh requests until manually cleared.
+    response.delete_cookie(key=CSRF_COOKIE_NAME, path="/api/v1/auth")
+
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
         value=token,
@@ -47,6 +60,8 @@ def set_csrf_cookie(response: Response, token: str, max_age_seconds: int) -> Non
 def clear_csrf_cookie(response: Response) -> None:
     """Remove the csrf_token cookie (e.g. on logout)."""
     response.delete_cookie(key=CSRF_COOKIE_NAME, path=CSRF_COOKIE_PATH)
+    # Also kill any pre-fix legacy cookie if still hanging around.
+    response.delete_cookie(key=CSRF_COOKIE_NAME, path="/api/v1/auth")
 
 
 def require_csrf(request: Request) -> None:
