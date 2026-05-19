@@ -52,6 +52,8 @@ class AppleTransaction:
 class AppleSubscriptionStatus:
     """Subscription status from App Store Server Notification."""
 
+    notification_uuid: str  # used to dedupe replays (helvetra/backend#96)
+    notification_type: str
     original_transaction_id: str
     product_id: str
     status: str  # active, expired, in_billing_retry, revoked
@@ -208,8 +210,13 @@ async def parse_server_notification(signed_payload: str) -> AppleSubscriptionSta
         return None
 
     try:
+        notification_uuid = notification.get("notificationUUID", "")
         notification_type = notification.get("notificationType", "")
         subtype = notification.get("subtype", "")
+
+        if not notification_uuid:
+            logger.warning("Missing notificationUUID — cannot dedupe; refusing")
+            return None
 
         # Get the signed transaction data
         data = notification.get("data", {})
@@ -257,6 +264,8 @@ async def parse_server_notification(signed_payload: str) -> AppleSubscriptionSta
         logger.info(f"Apple notification: {notification_type}/{subtype} for {product_id}")
 
         return AppleSubscriptionStatus(
+            notification_uuid=notification_uuid,
+            notification_type=notification_type,
             original_transaction_id=original_transaction_id,
             product_id=product_id,
             status=status,

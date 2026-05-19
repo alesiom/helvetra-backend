@@ -81,6 +81,7 @@ async def apple_webhook(
     )
     from app.services.apple_storekit import parse_server_notification
     from app.services.subscription import sync_usage_period_limit
+    from app.services.webhook_events import check_idempotency, record_webhook_event
 
     try:
         payload = await request.json()
@@ -93,11 +94,22 @@ async def apple_webhook(
         logger.warning("Missing signedPayload in Apple webhook")
         raise HTTPException(status_code=400, detail="Missing signedPayload")
 
-    # Parse and validate the notification
+    # Parse and validate the notification. Failures return 400 so Apple
+    # retries — masking parse failures with 200 made attacker probing
+    # invisible to monitoring (helvetra/backend#96).
     status_update = await parse_server_notification(signed_payload)
     if not status_update:
         logger.error("Failed to parse Apple server notification")
-        return {"status": "ok"}  # Return 200 to prevent retries
+        raise HTTPException(status_code=400, detail="Invalid signed payload")
+
+    # Dedupe replays. Apple retries notifications on non-2xx; the same
+    # notificationUUID must not be applied twice.
+    existing = await check_idempotency(db, "apple", status_update.notification_uuid)
+    if existing is not None:
+        logger.info(
+            f"Apple notification {status_update.notification_uuid} already processed; skipping"
+        )
+        return {"status": "ok", "duplicate": True}
 
     # Find subscription by Apple original transaction ID
     result = await db.execute(
@@ -113,6 +125,17 @@ async def apple_webhook(
             f"No subscription found for Apple transaction: "
             f"{status_update.original_transaction_id}"
         )
+        # Still record the event so retries of the same UUID dedupe.
+        await record_webhook_event(
+            db,
+            source="apple",
+            event_id=status_update.notification_uuid,
+            event_type=status_update.notification_type,
+            payload=payload,
+            processed=False,
+            error="subscription_not_found",
+        )
+        await db.commit()
         return {"status": "ok"}
 
     # Update subscription based on status
@@ -143,6 +166,16 @@ async def apple_webhook(
     logger.info(
         f"Updated Apple subscription {subscription.id}: "
         f"{status_update.status}"
+    )
+
+    # Record the processed event for idempotency on retries.
+    await record_webhook_event(
+        db,
+        source="apple",
+        event_id=status_update.notification_uuid,
+        event_type=status_update.notification_type,
+        payload=payload,
+        processed=True,
     )
 
     await db.commit()
