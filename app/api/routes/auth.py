@@ -597,14 +597,28 @@ async def apple_sign_in(
     user = result.scalar_one_or_none()
 
     if not user and apple_user.email:
-        # Check if user exists by email (link accounts)
+        # Auto-link Apple ID to an existing local account only when BOTH
+        # sides confirm ownership of the email: Apple says email_verified=True
+        # AND the local account already had email_verified=True. Otherwise
+        # an attacker who controls an unverified local-account email could
+        # piggy-back any Apple Sign-In that maps to the same address.
+        # See helvetra/backend#104.
         result = await db.execute(select(User).where(User.email == apple_user.email))
         user = result.scalar_one_or_none()
         if user:
-            # Link Apple ID to existing account
+            if not (apple_user.email_verified and user.email_verified):
+                log_auth_event(
+                    AuthEvent.LOGIN_FAILED,
+                    client_ip,
+                    apple_user.email,
+                    user_agent,
+                    {"reason": "apple_link_unverified_email"},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Verify your email on the existing account before linking Apple Sign-In",
+                )
             user.apple_id = apple_user.apple_id
-            if apple_user.email_verified and not user.email_verified:
-                user.email_verified = True
 
     if not user:
         # Create new user with Apple ID

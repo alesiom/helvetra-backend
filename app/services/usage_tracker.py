@@ -31,30 +31,52 @@ def get_week_key() -> str:
     return now.strftime("%G-W%V")
 
 
+# Atomic check-and-increment in Redis. Previously this was GET → check →
+# INCRBY, which lets two concurrent requests both pass the check at
+# current=limit-ε and both increment, overshooting the limit. Lua scripts
+# run as a single Redis command so the whole gate is atomic. See
+# helvetra/backend#99.
+_CHECK_AND_INCR_LUA = """
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local cost = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+if current + cost > limit then
+    return {0, current}
+end
+local new = redis.call("INCRBY", KEYS[1], cost)
+redis.call("EXPIRE", KEYS[1], ttl)
+return {1, new}
+"""
+
+
 class AnonymousUsageTracker:
     """Redis-based tracker for anonymous user character usage."""
 
     def __init__(self):
         """Initialize tracker with Redis connection."""
         self.client: redis.Redis | None = None
+        self._check_and_incr = None
 
     async def connect(self):
-        """Establish Redis connection."""
+        """Establish Redis connection + register Lua script."""
         if self.client is None:
             self.client = redis.from_url(settings.redis_url)
+            self._check_and_incr = self.client.register_script(_CHECK_AND_INCR_LUA)
 
     async def close(self):
         """Close Redis connection."""
         if self.client:
             await self.client.aclose()
             self.client = None
+            self._check_and_incr = None
 
     async def check_and_record_usage(
         self, ip_address: str, characters: int
     ) -> UsageResult:
         """
-        Check if usage is within limit and record the characters if allowed.
-        Uses atomic operations to prevent race conditions.
+        Atomically check whether `characters` fits under the weekly limit
+        for this IP and record the usage in the same Redis round-trip.
         """
         await self.connect()
 
@@ -62,12 +84,15 @@ class AnonymousUsageTracker:
         limit = config.period_limit
         week_key = get_week_key()
         redis_key = f"usage:anon:{ip_address}:{week_key}"
+        ttl_seconds = 8 * 24 * 60 * 60  # week + buffer
 
-        # Get current usage
-        current = await self.client.get(redis_key)
-        current_usage = int(current or 0)
+        allowed, value = await self._check_and_incr(
+            keys=[redis_key],
+            args=[characters, limit, ttl_seconds],
+        )
+        allowed = bool(int(allowed))
+        usage = int(value)
 
-        # Calculate reset time (next Monday 00:00 UTC)
         now = datetime.now(timezone.utc)
         days_until_monday = (7 - now.weekday()) % 7 or 7
         next_monday = now.replace(
@@ -75,27 +100,11 @@ class AnonymousUsageTracker:
         ) + timedelta(days=days_until_monday)
         reset_at = int(next_monday.timestamp())
 
-        # Check if adding these characters would exceed limit
-        if current_usage + characters > limit:
-            return UsageResult(
-                allowed=False,
-                characters_used=current_usage,
-                characters_limit=limit,
-                characters_remaining=max(0, limit - current_usage),
-                reset_at=reset_at,
-            )
-
-        # Record usage atomically
-        new_usage = await self.client.incrby(redis_key, characters)
-
-        # Set expiry to 8 days (covers week + buffer)
-        await self.client.expire(redis_key, 8 * 24 * 60 * 60)
-
         return UsageResult(
-            allowed=True,
-            characters_used=new_usage,
+            allowed=allowed,
+            characters_used=usage,
             characters_limit=limit,
-            characters_remaining=max(0, limit - new_usage),
+            characters_remaining=max(0, limit - usage),
             reset_at=reset_at,
         )
 
