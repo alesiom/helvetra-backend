@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import asyncio
 
 from app.api.dependencies import get_current_user_from_api_key
 from app.core.database import get_db
@@ -323,14 +322,16 @@ async def public_translate(
 
         await db.commit()
 
-        # Report usage to Stripe asynchronously so meter problems never
-        # block the translation response.
-        asyncio.create_task(
-            report_translation_meter_event(
-                stripe_customer_id=user.stripe_customer_id,
-                characters=text_length,
-                idempotency_key=generate_meter_idempotency_key(user.id, text_length),
-            )
+        # Report usage to Stripe. Awaited inline (rather than fire-and-forget
+        # via asyncio.create_task) because the task otherwise gets cancelled
+        # when the request scope unwinds or the process restarts, silently
+        # losing meter events — i.e. unbilled translations. The meter call is
+        # sub-100ms and tolerates failure (logged inside the helper) so the
+        # latency cost is acceptable. See helvetra/backend#112.
+        await report_translation_meter_event(
+            stripe_customer_id=user.stripe_customer_id,
+            characters=text_length,
+            idempotency_key=generate_meter_idempotency_key(user.id, text_length),
         )
 
         # Fire usage-alert emails for newly-crossed thresholds. The
