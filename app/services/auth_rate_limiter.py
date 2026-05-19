@@ -102,11 +102,17 @@ class AuthRateLimiter:
             remaining=self.REGISTER_LIMIT_PER_HOUR - count - 1,
         )
 
-    async def check_account_lockout(self, email: str) -> AuthRateLimitResult:
-        """Check if account is locked out due to failed attempts."""
+    # Lockout is per-(email, IP) rather than per-email so a single attacker
+    # can't keep a victim's account permanently locked by rotating proxies —
+    # the lockout only affects the attacker's own IPs. See helvetra/backend#95.
+
+    async def check_account_lockout(
+        self, email: str, ip_address: str
+    ) -> AuthRateLimitResult:
+        """Check if (email, IP) pair is locked out due to failed attempts."""
         await self.connect()
 
-        lockout_key = f"auth:lockout:{email}"
+        lockout_key = f"auth:lockout:{email}:{ip_address}"
         lockout_ttl = await self.client.ttl(lockout_key)
 
         if lockout_ttl > 0:
@@ -119,19 +125,19 @@ class AuthRateLimiter:
 
         return AuthRateLimitResult(allowed=True, remaining=self.MAX_FAILED_ATTEMPTS)
 
-    async def record_failed_attempt(self, email: str) -> AuthRateLimitResult:
-        """Record a failed login attempt and lock out if threshold exceeded."""
+    async def record_failed_attempt(
+        self, email: str, ip_address: str
+    ) -> AuthRateLimitResult:
+        """Record a failed login attempt; lock out (email, IP) when over threshold."""
         await self.connect()
 
-        attempts_key = f"auth:failed:{email}"
-        lockout_key = f"auth:lockout:{email}"
+        attempts_key = f"auth:failed:{email}:{ip_address}"
+        lockout_key = f"auth:lockout:{email}:{ip_address}"
 
-        # Increment failed attempts
         attempts = await self.client.incr(attempts_key)
         await self.client.expire(attempts_key, self.LOCKOUT_DURATION)
 
         if attempts >= self.MAX_FAILED_ATTEMPTS:
-            # Lock the account
             await self.client.set(lockout_key, "1", ex=self.LOCKOUT_DURATION)
             await self.client.delete(attempts_key)
             return AuthRateLimitResult(
@@ -146,10 +152,10 @@ class AuthRateLimiter:
             remaining=self.MAX_FAILED_ATTEMPTS - attempts,
         )
 
-    async def clear_failed_attempts(self, email: str) -> None:
-        """Clear failed attempts on successful login."""
+    async def clear_failed_attempts(self, email: str, ip_address: str) -> None:
+        """Clear failed attempts on successful login from this IP."""
         await self.connect()
-        await self.client.delete(f"auth:failed:{email}")
+        await self.client.delete(f"auth:failed:{email}:{ip_address}")
 
 
 # Global auth rate limiter instance

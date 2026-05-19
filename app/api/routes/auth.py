@@ -157,7 +157,7 @@ async def login(
         )
 
     # Check if account is locked out
-    lockout_result = await auth_rate_limiter.check_account_lockout(request.email)
+    lockout_result = await auth_rate_limiter.check_account_lockout(request.email, client_ip)
     if lockout_result.locked_out:
         log_auth_event(
             AuthEvent.ACCOUNT_LOCKED,
@@ -177,7 +177,7 @@ async def login(
 
     if not user or not user.password_hash:
         # Record failed attempt for brute force protection
-        failed_result = await auth_rate_limiter.record_failed_attempt(request.email)
+        failed_result = await auth_rate_limiter.record_failed_attempt(request.email, client_ip)
         log_auth_event(
             AuthEvent.LOGIN_FAILED,
             client_ip,
@@ -192,7 +192,7 @@ async def login(
 
     if not verify_password(request.password, user.password_hash):
         # Record failed attempt for brute force protection
-        failed_result = await auth_rate_limiter.record_failed_attempt(request.email)
+        failed_result = await auth_rate_limiter.record_failed_attempt(request.email, client_ip)
         log_auth_event(
             AuthEvent.LOGIN_FAILED,
             client_ip,
@@ -206,7 +206,7 @@ async def login(
         )
 
     # Clear failed attempts on successful login
-    await auth_rate_limiter.clear_failed_attempts(request.email)
+    await auth_rate_limiter.clear_failed_attempts(request.email, client_ip)
     log_auth_event(AuthEvent.LOGIN_SUCCESS, client_ip, request.email, user_agent)
 
     # Get subscription tier
