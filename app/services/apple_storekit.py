@@ -132,7 +132,19 @@ async def verify_transaction(signed_transaction: str) -> AppleTransaction | None
     """
     Verify and parse a signed StoreKit 2 transaction.
     Returns AppleTransaction if valid, None if invalid.
+
+    Gated by settings.apple_storekit_enabled. The verifier in this file
+    points at the Sign-In-with-Apple JWKS instead of the App Store Root
+    CA chain and disables expiry/audience/issuer checks — so it must
+    stay off until rewritten. See helvetra/backend#94.
     """
+    if not settings.apple_storekit_enabled:
+        logger.warning(
+            "Apple StoreKit verification is disabled (backend#94). "
+            "Refusing to process signed_transaction."
+        )
+        return None
+
     payload = await _decode_jws(signed_transaction)
     if not payload:
         return None
@@ -179,7 +191,17 @@ async def parse_server_notification(signed_payload: str) -> AppleSubscriptionSta
     """
     Parse an App Store Server Notification v2.
     Returns subscription status info if valid.
+
+    Gated by settings.apple_storekit_enabled — same reason as
+    verify_transaction. See helvetra/backend#94.
     """
+    if not settings.apple_storekit_enabled:
+        logger.warning(
+            "Apple StoreKit verification is disabled (backend#94). "
+            "Refusing to process server notification."
+        )
+        return None
+
     # First decode the outer notification
     notification = await _decode_jws(signed_payload)
     if not notification:

@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
 
+    # Apple StoreKit kill-switch. The current verifier (apple_storekit.py)
+    # validates against the wrong JWKS (Sign-In-with-Apple instead of App
+    # Store Root CA) and disables claim checks; until rewritten against
+    # Apple's app-store-server-library, every entry point that depends on
+    # transaction verification refuses to process. See helvetra/backend#94.
+    apple_storekit_enabled: bool = False
+
     # Stripe (payments)
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
