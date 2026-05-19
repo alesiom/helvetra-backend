@@ -9,8 +9,9 @@ by the Stripe webhook handler and any future provider integration.
 Two responsibilities:
 
 - Idempotency: webhook providers retry. We dedupe by (source, event_id).
-- Audit log: every received event is persisted as JSON for later
-  inspection, regardless of whether it was processed successfully.
+- Audit log: every received event is persisted as JSONB for later
+  inspection (jsonb_path_ops etc. work), regardless of whether it was
+  processed successfully.
 """
 
 import json
@@ -19,8 +20,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.subscription import Subscription
 from app.models.webhook import WebhookEvent
+
+
+def _normalise_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Coerce non-JSON-native types (e.g. Decimal in Stripe graduated prices)
+    to strings via a json.dumps/loads round-trip so JSONB always accepts the
+    input. Cheap enough for webhook traffic."""
+    return json.loads(json.dumps(payload, default=str))
 
 
 async def check_idempotency(
@@ -45,19 +52,12 @@ async def record_webhook_event(
     processed: bool = False,
     error: str | None = None,
 ) -> WebhookEvent:
-    """
-    Persist a webhook event for idempotency and audit.
-
-    `default=str` on json.dumps coerces non-JSON-native types — notably
-    Decimal, which Stripe uses for fractional-unit graduated prices — to
-    strings so the payload can always be stored. Without it the B2B
-    metered-price webhooks raise TypeError.
-    """
+    """Persist a webhook event for idempotency and audit."""
     event = WebhookEvent(
         source=source,
         event_id=event_id,
         event_type=event_type,
-        payload=json.dumps(payload, default=str),
+        payload=_normalise_payload(payload),
         processed=processed,
         error=error,
     )
@@ -66,11 +66,3 @@ async def record_webhook_event(
     return event
 
 
-async def get_subscription_by_external_id(
-    db: AsyncSession, external_id: str
-) -> Subscription | None:
-    """Find a subscription by its payment-provider external ID."""
-    result = await db.execute(
-        select(Subscription).where(Subscription.external_id == external_id)
-    )
-    return result.scalar_one_or_none()

@@ -108,6 +108,7 @@ _WRAPPER_TAG_PATTERN = re.compile(r"^\s*<text>\s*|\s*</text>\s*$", re.IGNORECASE
 # optionally wrapped in (), *, or []. Legitimate parenthetical lines that
 # don't start with one of these phrases (e.g. "(your friend)") are preserved.
 _COMMENTARY_SIGNAL_PHRASES = (
+    # English
     r"Translation note",
     r"Note",
     r"This is (?:a|the|just)",
@@ -116,6 +117,24 @@ _COMMENTARY_SIGNAL_PHRASES = (
     r"Translated (?:literally|directly|as)",
     r"If (?:this|the)",
     r"Please (?:provide|note)",
+    # German
+    r"Hinweis",
+    r"Anmerkung",
+    r"Übersetzung(?:shinweis)?",
+    r"Dies (?:ist|war)",
+    r"Der (?:Originaltext|Originaltext|Quelltext|Eingabetext)",
+    # French
+    r"Note de traduction",
+    r"Remarque",
+    r"Traduction (?:littérale|directe)",
+    r"Le (?:texte original|texte source|texte d'entrée)",
+    r"Il s'agit (?:d'une|du)",
+    # Italian
+    r"Nota di traduzione",
+    r"Nota",
+    r"Traduzione (?:letterale|diretta)",
+    r"Il (?:testo originale|testo di partenza)",
+    r"Si tratta di",
 )
 _TRAILING_COMMENTARY_PATTERN = re.compile(
     r"\n\s*[\(*\[]?\s*(?:" + "|".join(_COMMENTARY_SIGNAL_PHRASES) + r")\b[\s\S]*$",
