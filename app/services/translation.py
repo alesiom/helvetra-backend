@@ -155,6 +155,17 @@ def strip_wrapper_tags(content: str) -> str:
     cleaned = _TRAILING_COMMENTARY_PATTERN.sub("", cleaned)
     return cleaned.strip()
 
+
+def apply_swiss_orthography(content: str, target_lang: str) -> str:
+    """
+    Swiss German orthography drops the Eszett. Replace ß → ss (and the rare
+    capital ẞ → SS) in German output so the result reads as the Swiss reader
+    expects. No-op for any other target language. See helvetra/backend#34.
+    """
+    if target_lang != "de":
+        return content
+    return content.replace("ß", "ss").replace("ẞ", "SS")
+
 # Languages with T-V distinction (informal/formal address)
 # Maps language code to (informal forms, formal forms)
 FORMALITY_FORMS = {
@@ -332,6 +343,7 @@ async def translate_text(
         translation = raw_content
 
     translation = strip_wrapper_tags(translation)
+    translation = apply_swiss_orthography(translation, target_lang)
 
     # Length-based prompt-injection guard. The 3x ratio is too tight for
     # short inputs (a few-word phrase plus normal language expansion can
