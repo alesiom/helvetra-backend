@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     # Rate limiting
     rate_limit_per_minute: int = 60
     rate_limit_per_day: int = 500
-    max_text_length: int = 5000
 
     # Encryption (for PII)
     encryption_key: str = ""
