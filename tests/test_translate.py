@@ -473,3 +473,159 @@ class TestStripWrapperTags:
 
         raw = "Dear Anna,\n(your friend)\nJohn"
         assert strip_wrapper_tags(raw) == "Dear Anna,\n(your friend)\nJohn"
+
+
+class TestValidateTranslationOutput:
+    """Post-translation validators that catch model rule violations."""
+
+    def test_matching_salutation_names_pass(self):
+        from app.services.translation import validate_translation_output
+
+        validate_translation_output(
+            "Dear Claudia,\nThanks.\nAlex",
+            "Liebe Claudia,\nDanke.\nAlex",
+        )
+
+    def test_salutation_name_swapped_raises(self):
+        """Source greets Claudia, target greets Alex — model swapped names."""
+        from app.services.translation import (
+            TranslationValidationError,
+            validate_translation_output,
+        )
+
+        with pytest.raises(TranslationValidationError) as exc_info:
+            validate_translation_output(
+                "Dear Claudia,\nThanks.\nAlex",
+                "Lieber Alex,\nDanke.\nAlex",
+            )
+        assert exc_info.value.code == "NAME_SUBSTITUTION"
+
+    def test_no_salutation_in_source_is_skipped(self):
+        from app.services.translation import validate_translation_output
+
+        validate_translation_output("Just a sentence.", "Nur ein Satz.")
+
+    def test_no_salutation_in_target_is_skipped(self):
+        from app.services.translation import validate_translation_output
+
+        validate_translation_output("Dear Claudia, hi", "Hallo zusammen")
+
+    def test_french_salutation_preserved(self):
+        from app.services.translation import validate_translation_output
+
+        validate_translation_output("Cher Marc,\nMerci.", "Lieber Marc,\nDanke.")
+
+    def test_italian_salutation_swap_raises(self):
+        from app.services.translation import (
+            TranslationValidationError,
+            validate_translation_output,
+        )
+
+        with pytest.raises(TranslationValidationError) as exc_info:
+            validate_translation_output(
+                "Caro Marco,\nGrazie.",
+                "Lieber Stefan,\nDanke.",
+            )
+        assert exc_info.value.code == "NAME_SUBSTITUTION"
+
+    def test_signature_name_matches_user_name_does_not_swap(self):
+        """Source signature 'Alex' must not be reassigned to the greeting."""
+        from app.services.translation import (
+            TranslationValidationError,
+            validate_translation_output,
+        )
+
+        with pytest.raises(TranslationValidationError) as exc_info:
+            validate_translation_output(
+                "Dear Claudia,\nThanks for your reply.\nKind regards,\nAlex",
+                "Lieber Alex,\nDanke für deine Antwort.\nLiebe Grüsse,\nAlex",
+            )
+        assert exc_info.value.code == "NAME_SUBSTITUTION"
+
+    def test_placeholder_leak_dein_name_raises(self):
+        from app.services.translation import (
+            TranslationValidationError,
+            validate_translation_output,
+        )
+
+        with pytest.raises(TranslationValidationError) as exc_info:
+            validate_translation_output(
+                "Kind regards,\nAlex",
+                "Liebe Grüsse,\n[Dein Name]",
+            )
+        assert exc_info.value.code == "PLACEHOLDER_LEAK"
+
+    def test_placeholder_leak_your_name_raises(self):
+        from app.services.translation import (
+            TranslationValidationError,
+            validate_translation_output,
+        )
+
+        with pytest.raises(TranslationValidationError) as exc_info:
+            validate_translation_output(
+                "Kind regards,\nAlex",
+                "Best,\n[Your name]",
+            )
+        assert exc_info.value.code == "PLACEHOLDER_LEAK"
+
+    def test_placeholder_leak_datum_raises(self):
+        from app.services.translation import (
+            TranslationValidationError,
+            validate_translation_output,
+        )
+
+        with pytest.raises(TranslationValidationError) as exc_info:
+            validate_translation_output(
+                "Today is May 26.",
+                "Heute ist der [Datum].",
+            )
+        assert exc_info.value.code == "PLACEHOLDER_LEAK"
+
+    def test_placeholder_in_source_is_preserved(self):
+        """If the source contains a placeholder, it's allowed in target too."""
+        from app.services.translation import validate_translation_output
+
+        validate_translation_output(
+            "Hello [Name], welcome.",
+            "Hallo [Name], willkommen.",
+        )
+
+
+class TestTranslateEndpointValidation:
+    """The validator turns into a 422 with a structured error code at the API edge."""
+
+    def test_name_substitution_returns_422(self, client: TestClient, httpx_mock: HTTPXMock):
+        httpx_mock.add_response(
+            json=mock_translation_response("Lieber Alex,\nDanke.\nAlex")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Dear Claudia,\nThanks.\nAlex",
+                "source_lang": "en",
+                "target_lang": "de",
+            },
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["detail"]["code"] == "NAME_SUBSTITUTION"
+
+    def test_placeholder_leak_returns_422(self, client: TestClient, httpx_mock: HTTPXMock):
+        httpx_mock.add_response(
+            json=mock_translation_response("Liebe Grüsse,\n[Dein Name]")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Kind regards,\nAlex",
+                "source_lang": "en",
+                "target_lang": "de",
+            },
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["detail"]["code"] == "PLACEHOLDER_LEAK"
