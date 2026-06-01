@@ -15,7 +15,7 @@ from app.models.user import User
 from app.schemas.translate import SUPPORTED_LANGUAGE_CODES, TranslateRequest, TranslateResponse
 from app.services.apple_storekit import verify_transaction
 from app.services.subscription import get_or_create_subscription, record_usage
-from app.services.translation import translate_text
+from app.services.translation import TranslationValidationError, translate_text
 from app.services.usage_tracker import anonymous_usage_tracker
 
 logger = logging.getLogger(__name__)
@@ -185,6 +185,22 @@ async def translate(
             meta={
                 "characters": text_length,
                 "processing_time_ms": result.processing_time_ms,
+            },
+        )
+    except TranslationValidationError as e:
+        logger.warning(
+            "Translation validation rejected (%s): %s",
+            e.code,
+            e.detail,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": e.code,
+                "message": (
+                    "We couldn't produce a clean translation. "
+                    "Please try again, or rephrase the text."
+                ),
             },
         )
     except ValueError as e:
