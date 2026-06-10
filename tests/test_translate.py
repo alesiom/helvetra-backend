@@ -83,7 +83,7 @@ class TestTranslateEndpoint:
         assert response.status_code == 422
 
     def test_translate_max_length_accepted(self, client: TestClient, httpx_mock: HTTPXMock):
-        """Text at exactly 1000 characters is accepted."""
+        """Text at exactly the anonymous per-request limit (400) is accepted."""
         httpx_mock.add_response(
             json=mock_translation_response("translated")
         )
@@ -91,13 +91,27 @@ class TestTranslateEndpoint:
         response = client.post(
             "/api/v1/translate",
             json={
-                "text": "a" * 1000,
+                "text": "a" * 400,
                 "source_lang": "en",
                 "target_lang": "fr",
             }
         )
 
         assert response.status_code == 200
+
+    def test_translate_anonymous_tier_limit_rejected(self, client: TestClient):
+        """Text above the anonymous per-request limit is rejected with TEXT_TOO_LONG."""
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "a" * 401,
+                "source_lang": "en",
+                "target_lang": "fr",
+            }
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "TEXT_TOO_LONG"
 
     def test_translate_missing_source_lang_rejected(self, client: TestClient):
         """Missing source language is rejected."""
