@@ -87,7 +87,13 @@ async def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
-    """Extract user from JWT if present, return None for anonymous requests."""
+    """Extract user from JWT if present, return None for anonymous requests.
+
+    A request without credentials is a legitimate anonymous request. A request
+    WITH credentials that fail validation is rejected instead of being silently
+    treated as anonymous — otherwise a paying user with an expired access token
+    would be downgraded to anonymous limits without any signal to refresh.
+    """
     if credentials is None:
         return None
 
@@ -95,7 +101,26 @@ async def get_current_user_optional(
     user_id = decode_access_token(token)
 
     if user_id is None:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "TOKEN_EXPIRED",
+                "message": "Access token is invalid or expired. Refresh and retry.",
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "TOKEN_INVALID",
+                "message": "Token does not match a known user.",
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
