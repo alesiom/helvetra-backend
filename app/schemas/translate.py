@@ -16,7 +16,11 @@ SwissDialect = Literal["bern", "zurich", "basel", "stgallen", "wallis", "luzern"
 class TranslateRequest(BaseModel):
     """Incoming translation request."""
 
-    text: str = Field(..., min_length=1, max_length=1000)
+    # Sanity ceiling only — must stay above the largest tier's per-request
+    # limit (B2B BUSINESS: 50k). The real per-user limit is enforced by the
+    # tier check in the route, AFTER authentication. A tighter cap here runs
+    # before tier logic and rejects paying users regardless of plan.
+    text: str = Field(..., min_length=1, max_length=50_000)
     source_lang: str = Field(..., min_length=2, max_length=4)
     target_lang: str = Field(..., min_length=2, max_length=3)
     formality: Literal["informal", "formal", "auto"] = Field(

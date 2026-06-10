@@ -69,8 +69,23 @@ class TestTranslateEndpoint:
 
         assert response.status_code == 422
 
-    def test_translate_text_too_long_rejected(self, client: TestClient):
-        """Text exceeding 1000 characters is rejected."""
+    def test_translate_text_over_schema_ceiling_rejected(self, client: TestClient):
+        """Text above the absolute schema ceiling (50k) is rejected by validation."""
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "a" * 50_001,
+                "source_lang": "en",
+                "target_lang": "fr",
+            }
+        )
+
+        assert response.status_code == 422
+
+    def test_translate_text_over_1000_hits_tier_check_not_schema(self, client: TestClient):
+        """Texts between tier limits must reach the tier check, not die in the
+        schema: a 1,001-char anonymous request gets a tier-aware TEXT_TOO_LONG,
+        and the same text from a paying user is accepted (see TestPaidTierLengths)."""
         response = client.post(
             "/api/v1/translate",
             json={
@@ -80,7 +95,8 @@ class TestTranslateEndpoint:
             }
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "TEXT_TOO_LONG"
 
     def test_translate_max_length_accepted(self, client: TestClient, httpx_mock: HTTPXMock):
         """Text at exactly the anonymous per-request limit (400) is accepted."""
@@ -643,3 +659,48 @@ class TestTranslateEndpointValidation:
         assert response.status_code == 422
         body = response.json()
         assert body["detail"]["code"] == "PLACEHOLDER_LEAK"
+
+
+class TestPaidTierLengths:
+    """Paid-tier texts above the old 1,000-char schema cap must be accepted."""
+
+    def test_pro_user_text_over_1000_accepted(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """A PRO user (5,000/request) translating 1,165 chars gets a 200."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.api.dependencies import get_current_user_optional
+
+        httpx_mock.add_response(json=mock_translation_response("translated"))
+
+        fake_user = MagicMock()
+        fake_subscription = MagicMock()
+        fake_subscription.tier.value = "pro"
+
+        app.dependency_overrides[get_current_user_optional] = lambda: fake_user
+        try:
+            with (
+                patch(
+                    "app.api.routes.translate.get_or_create_subscription",
+                    new_callable=AsyncMock,
+                    return_value=fake_subscription,
+                ),
+                patch(
+                    "app.api.routes.translate.record_usage",
+                    new_callable=AsyncMock,
+                ),
+            ):
+                response = client.post(
+                    "/api/v1/translate",
+                    json={
+                        "text": "a" * 1165,
+                        "source_lang": "en",
+                        "target_lang": "de",
+                    },
+                )
+        finally:
+            app.dependency_overrides.pop(get_current_user_optional, None)
+
+        assert response.status_code == 200
+        assert response.json()["data"]["translation"] == "translated"
