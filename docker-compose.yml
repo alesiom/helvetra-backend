@@ -41,7 +41,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"  # External 6380 to avoid conflicts (same reason as db)
     volumes:
       - redis_data:/data
 
