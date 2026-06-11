@@ -5,6 +5,7 @@ Handles text translation requests between supported languages.
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -218,7 +219,18 @@ async def translate(
                     ),
                 },
             )
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.exception(f"Translation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
+    except httpx.HTTPError as e:
+        # Upstream model API failure is not our 500: tell clients the
+        # service is temporarily unavailable so they can show a real message.
+        logger.error(f"Upstream translation API error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "UPSTREAM_UNAVAILABLE",
+                "message": (
+                    "The translation service is temporarily unavailable. "
+                    "Please try again in a moment."
+                ),
+            },
+        )

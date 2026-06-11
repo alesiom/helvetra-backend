@@ -96,7 +96,7 @@ class TestTranslateEndpoint:
         )
 
         assert response.status_code == 400
-        assert response.json()["detail"]["code"] == "TEXT_TOO_LONG"
+        assert response.json()["error"]["code"] == "TEXT_TOO_LONG"
 
     def test_translate_max_length_accepted(self, client: TestClient, httpx_mock: HTTPXMock):
         """Text at exactly the anonymous per-request limit (400) is accepted."""
@@ -127,7 +127,7 @@ class TestTranslateEndpoint:
         )
 
         assert response.status_code == 400
-        assert response.json()["detail"]["code"] == "TEXT_TOO_LONG"
+        assert response.json()["error"]["code"] == "TEXT_TOO_LONG"
 
     def test_translate_missing_source_lang_rejected(self, client: TestClient):
         """Missing source language is rejected."""
@@ -170,7 +170,7 @@ class TestTranslateEndpoint:
         )
 
         assert response.status_code == 422
-        assert response.json()["detail"]["code"] == "SUSPICIOUS_OUTPUT"
+        assert response.json()["error"]["code"] == "SUSPICIOUS_OUTPUT"
 
     def test_translate_short_input_allows_normal_expansion(
         self, client: TestClient, httpx_mock: HTTPXMock
@@ -193,7 +193,7 @@ class TestTranslateEndpoint:
         assert response.json()["data"]["translation"] == "Hie isch's"
 
     def test_translate_api_error_handled(self, client: TestClient, httpx_mock: HTTPXMock):
-        """API errors are handled gracefully."""
+        """Upstream API failures surface as 503 with a structured code."""
         httpx_mock.add_response(status_code=500)
 
         response = client.post(
@@ -205,7 +205,10 @@ class TestTranslateEndpoint:
             }
         )
 
-        assert response.status_code == 500
+        assert response.status_code == 503
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "UPSTREAM_UNAVAILABLE"
 
     def test_translate_preserves_whitespace(self, client: TestClient, httpx_mock: HTTPXMock):
         """Translation preserves meaningful content."""
@@ -640,7 +643,7 @@ class TestTranslateEndpointValidation:
 
         assert response.status_code == 422
         body = response.json()
-        assert body["detail"]["code"] == "NAME_SUBSTITUTION"
+        assert body["error"]["code"] == "NAME_SUBSTITUTION"
 
     def test_placeholder_leak_returns_422(self, client: TestClient, httpx_mock: HTTPXMock):
         httpx_mock.add_response(
@@ -658,7 +661,7 @@ class TestTranslateEndpointValidation:
 
         assert response.status_code == 422
         body = response.json()
-        assert body["detail"]["code"] == "PLACEHOLDER_LEAK"
+        assert body["error"]["code"] == "PLACEHOLDER_LEAK"
 
 
 class TestPaidTierLengths:

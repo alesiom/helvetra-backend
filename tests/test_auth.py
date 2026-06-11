@@ -157,7 +157,7 @@ class TestRegisterEndpoint:
         response = client.post("/api/v1/auth/register", json=valid_register)
 
         assert response.status_code == 409
-        assert "already registered" in response.json()["detail"]
+        assert "already registered" in response.json()["error"]["message"]
 
     def test_register_weak_password_rejected(self, client: TestClient, valid_register):
         """Password without numbers is rejected."""
@@ -235,7 +235,7 @@ class TestLoginEndpoint:
         response = client.post("/api/v1/auth/login", json=valid_login)
 
         assert response.status_code == 401
-        assert "Invalid email or password" in response.json()["detail"]
+        assert "Invalid email or password" in response.json()["error"]["message"]
 
     def test_login_unknown_email_rejected(self, client: TestClient, mock_db, valid_login):
         """Unknown email returns 401."""
@@ -308,7 +308,7 @@ class TestRefreshEndpoint:
         response = client.post("/api/v1/auth/refresh", json={"refresh_token": raw_token})
 
         assert response.status_code == 401
-        assert "expired" in response.json()["detail"]
+        assert "expired" in response.json()["error"]["message"]
 
     def test_refresh_revoked_token_rejected(self, client: TestClient, mock_db, mock_refresh_token):
         """Revoked refresh token returns 401."""

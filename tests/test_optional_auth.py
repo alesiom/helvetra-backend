@@ -45,7 +45,7 @@ class TestOptionalAuthRejectsBadTokens:
         )
 
         assert response.status_code == 401
-        detail = response.json()["detail"]
+        detail = response.json()["error"]
         assert detail["code"] == "TOKEN_EXPIRED"
         assert response.headers["WWW-Authenticate"] == "Bearer"
 
@@ -58,7 +58,7 @@ class TestOptionalAuthRejectsBadTokens:
         )
 
         assert response.status_code == 401
-        assert response.json()["detail"]["code"] == "TOKEN_EXPIRED"
+        assert response.json()["error"]["code"] == "TOKEN_EXPIRED"
 
     def test_limits_expired_token_returns_401(self, client: TestClient):
         """Limits endpoint must not report anonymous limits for expired tokens."""
@@ -68,7 +68,7 @@ class TestOptionalAuthRejectsBadTokens:
         )
 
         assert response.status_code == 401
-        assert response.json()["detail"]["code"] == "TOKEN_EXPIRED"
+        assert response.json()["error"]["code"] == "TOKEN_EXPIRED"
 
 
 class TestOptionalAuthAnonymousUnchanged:

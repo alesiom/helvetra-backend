@@ -20,6 +20,7 @@ from app.api.routes import (
     webhooks,
 )
 from app.config import get_settings
+from app.core.errors import install_error_handlers
 from app.core.middleware import RateLimitMiddleware
 
 settings = get_settings()
@@ -61,6 +62,9 @@ app = FastAPI(
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
 )
+
+# Single error envelope for every failure path (helvetra/backend#119).
+install_error_handlers(app)
 
 # Middleware is processed in reverse order (last added = first executed)
 app.add_middleware(
