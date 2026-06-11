@@ -156,9 +156,9 @@ class TestTranslateEndpoint:
     def test_translate_suspicious_output_rejected(self, client: TestClient, httpx_mock: HTTPXMock):
         """Output that exceeds both 3x input length and an absolute floor is rejected."""
         # Input "Hi" (2 chars). Threshold = max(2*3, 2+80) = 82. Mock 200 chars.
-        httpx_mock.add_response(
-            json=mock_translation_response("X" * 200)
-        )
+        # Registered twice: a validation rejection triggers one regeneration.
+        httpx_mock.add_response(json=mock_translation_response("X" * 200))
+        httpx_mock.add_response(json=mock_translation_response("X" * 200))
 
         response = client.post(
             "/api/v1/translate",
@@ -193,7 +193,9 @@ class TestTranslateEndpoint:
         assert response.json()["data"]["translation"] == "Hie isch's"
 
     def test_translate_api_error_handled(self, client: TestClient, httpx_mock: HTTPXMock):
-        """Upstream API failures surface as 503 with a structured code."""
+        """Persistent upstream failures surface as 503 with a structured code."""
+        # Registered twice: a 5xx triggers one retry before giving up.
+        httpx_mock.add_response(status_code=500)
         httpx_mock.add_response(status_code=500)
 
         response = client.post(
@@ -628,9 +630,9 @@ class TestTranslateEndpointValidation:
     """The validator turns into a 422 with a structured error code at the API edge."""
 
     def test_name_substitution_returns_422(self, client: TestClient, httpx_mock: HTTPXMock):
-        httpx_mock.add_response(
-            json=mock_translation_response("Lieber Alex,\nDanke.\nAlex")
-        )
+        # Registered twice: a validation rejection triggers one regeneration.
+        httpx_mock.add_response(json=mock_translation_response("Lieber Alex,\nDanke.\nAlex"))
+        httpx_mock.add_response(json=mock_translation_response("Lieber Alex,\nDanke.\nAlex"))
 
         response = client.post(
             "/api/v1/translate",
@@ -646,9 +648,9 @@ class TestTranslateEndpointValidation:
         assert body["error"]["code"] == "NAME_SUBSTITUTION"
 
     def test_placeholder_leak_returns_422(self, client: TestClient, httpx_mock: HTTPXMock):
-        httpx_mock.add_response(
-            json=mock_translation_response("Liebe Grüsse,\n[Dein Name]")
-        )
+        # Registered twice: a validation rejection triggers one regeneration.
+        httpx_mock.add_response(json=mock_translation_response("Liebe Grüsse,\n[Dein Name]"))
+        httpx_mock.add_response(json=mock_translation_response("Liebe Grüsse,\n[Dein Name]"))
 
         response = client.post(
             "/api/v1/translate",
@@ -707,3 +709,60 @@ class TestPaidTierLengths:
 
         assert response.status_code == 200
         assert response.json()["data"]["translation"] == "translated"
+
+
+class TestUpstreamRetry:
+    """One retry on fast upstream failures, one regeneration on rejection."""
+
+    def test_upstream_500_then_success_recovers(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """A transient upstream 5xx is retried once and succeeds."""
+        httpx_mock.add_response(status_code=502)
+        httpx_mock.add_response(json=mock_translation_response("Bonjour"))
+
+        response = client.post(
+            "/api/v1/translate",
+            json={"text": "Hello", "source_lang": "en", "target_lang": "fr"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["translation"] == "Bonjour"
+        assert len(httpx_mock.get_requests()) == 2
+
+    def test_validation_rejection_then_clean_recovers(
+        self, client: TestClient, httpx_mock: HTTPXMock
+    ):
+        """A placeholder leak on the first sample regenerates and succeeds."""
+        httpx_mock.add_response(
+            json=mock_translation_response("Liebe Grüsse,\n[Dein Name]")
+        )
+        httpx_mock.add_response(
+            json=mock_translation_response("Liebe Grüsse,\nAlex")
+        )
+
+        response = client.post(
+            "/api/v1/translate",
+            json={
+                "text": "Kind regards,\nAlex",
+                "source_lang": "en",
+                "target_lang": "de",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["translation"] == "Liebe Grüsse,\nAlex"
+        assert len(httpx_mock.get_requests()) == 2
+
+    def test_upstream_4xx_not_retried(self, client: TestClient, httpx_mock: HTTPXMock):
+        """A 4xx from upstream is a config problem: fail fast, single attempt."""
+        httpx_mock.add_response(status_code=401)
+
+        response = client.post(
+            "/api/v1/translate",
+            json={"text": "Hello", "source_lang": "en", "target_lang": "fr"},
+        )
+
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "UPSTREAM_UNAVAILABLE"
+        assert len(httpx_mock.get_requests()) == 1

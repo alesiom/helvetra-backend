@@ -352,40 +352,16 @@ def _parse_auto_detect_response(content: str) -> tuple[str, str]:
     return content, "de"
 
 
-async def translate_text(
+async def _attempt_translation(
     text: str,
     source_lang: str,
     target_lang: str,
-    formality: str = "auto",
-    dialect: str | None = None,
-) -> TranslationResult:
-    """
-    Translate text using the configured translation API.
-    When source_lang is 'auto', detects source language (distinguishing German from Swiss German).
-    When target_lang is 'gsw' and dialect is provided, uses the specified Swiss German dialect.
-    Applies prompt injection protection and validates output.
-    """
-    start_time = time.time()
+    system_prompt: str,
+    cache_key: str,
+    temperature: float,
+) -> tuple[str, str | None]:
+    """Make one translation attempt: call the model, parse, and validate."""
     is_auto_detect = source_lang == "auto"
-
-    formality_rule = get_formality_instruction(target_lang, formality)
-    dialect_instruction = get_dialect_instruction(target_lang, dialect)
-
-    if is_auto_detect:
-        system_prompt = SYSTEM_PROMPT_AUTO_DETECT.format(
-            target_lang=target_lang,
-            formality_rule=formality_rule,
-            dialect_instruction=dialect_instruction,
-        )
-    else:
-        system_prompt = SYSTEM_PROMPT.format(
-            source_lang=source_lang,
-            target_lang=target_lang,
-            formality_rule=formality_rule,
-            dialect_instruction=dialect_instruction,
-        )
-
-    cache_key = get_prompt_cache_key(source_lang, target_lang, formality, dialect)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -400,7 +376,7 @@ async def translate_text(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": USER_MESSAGE_TEMPLATE.format(text=text)},
                 ],
-                "temperature": 0.1,
+                "temperature": temperature,
                 "max_tokens": 2000,
                 "prompt_cache_key": cache_key,
             },
@@ -454,6 +430,82 @@ async def translate_text(
             translation[:200],
         )
         raise ValueError("Translation output suspiciously long")
+
+    return translation, detected_source_lang
+
+
+# Upstream failures that arrive quickly and are worth one retry. Timeouts are
+# deliberately NOT retried: the first attempt already consumed the 60s budget,
+# and a second wait would blow past any proxy/client deadline anyway.
+_RETRYABLE_TRANSPORT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.RemoteProtocolError,
+)
+
+
+async def translate_text(
+    text: str,
+    source_lang: str,
+    target_lang: str,
+    formality: str = "auto",
+    dialect: str | None = None,
+) -> TranslationResult:
+    """
+    Translate text using the configured translation API.
+    When source_lang is 'auto', detects source language (distinguishing German from Swiss German).
+    When target_lang is 'gsw' and dialect is provided, uses the specified Swiss German dialect.
+    Applies prompt injection protection and validates output. Retries once on
+    fast upstream failures, and regenerates once when output validation
+    rejects the first sample, before surfacing an error to the caller.
+    """
+    start_time = time.time()
+
+    formality_rule = get_formality_instruction(target_lang, formality)
+    dialect_instruction = get_dialect_instruction(target_lang, dialect)
+
+    if source_lang == "auto":
+        system_prompt = SYSTEM_PROMPT_AUTO_DETECT.format(
+            target_lang=target_lang,
+            formality_rule=formality_rule,
+            dialect_instruction=dialect_instruction,
+        )
+    else:
+        system_prompt = SYSTEM_PROMPT.format(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            formality_rule=formality_rule,
+            dialect_instruction=dialect_instruction,
+        )
+
+    cache_key = get_prompt_cache_key(source_lang, target_lang, formality, dialect)
+
+    def attempt(temperature: float = 0.1):
+        return _attempt_translation(
+            text, source_lang, target_lang, system_prompt, cache_key, temperature
+        )
+
+    try:
+        translation, detected_source_lang = await attempt()
+    except (TranslationValidationError, ValueError) as e:
+        # Most validation rejections are model nondeterminism; a second
+        # sample at slightly higher temperature usually passes. Log both
+        # outcomes so the false-positive rate of the validators stays
+        # measurable in production.
+        code = getattr(e, "code", "SUSPICIOUS_OUTPUT")
+        logger.warning("Validation rejected first attempt (%s); regenerating once", code)
+        translation, detected_source_lang = await attempt(temperature=0.3)
+        logger.info("Regeneration recovered from %s", code)
+    except _RETRYABLE_TRANSPORT_ERRORS as e:
+        logger.warning("Upstream transport error (%s); retrying once", type(e).__name__)
+        translation, detected_source_lang = await attempt()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code < 500:
+            raise
+        logger.warning(
+            "Upstream returned %d; retrying once", e.response.status_code
+        )
+        translation, detected_source_lang = await attempt()
 
     processing_time_ms = int((time.time() - start_time) * 1000)
 
